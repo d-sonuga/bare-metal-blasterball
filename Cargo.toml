@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "bootloader",
+    "blasterball",
+    "printer",
+    "num",
+    "tester",
+    "lazy_static",
+    "machine",
+    "sync",
+    "drivers"
+]
+
+exclude = [
+    "tester"
+]

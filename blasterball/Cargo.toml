@@ -1,0 +1,11 @@
+[package]
+name = "blasterball"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+printer = { path = "../printer" }
+tester = { path = "../tester" }
+machine = { path = "../machine" }
