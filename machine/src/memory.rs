@@ -42,6 +42,11 @@ impl Addr {
     pub fn from_ptr<T>(ptr: *const T) -> Addr {
         Self::new(ptr as u64)
     }
+
+    #[inline]
+    pub fn as_mut_ptr(&self) -> *mut u8 {
+        self.0 as *mut u8
+    }
 }
 
 impl Add<u64> for Addr {
@@ -105,6 +110,18 @@ impl fmt::Debug for Addr {
 impl AddAssign<u64> for Addr {
     fn add_assign(&mut self, rhs: u64){
         *self = Addr::new(self.0 + rhs);
+    }
+}
+
+impl PartialEq<u64> for Addr {
+    fn eq(&self, other: &u64) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<Addr> for u64 {
+    fn eq(&self, other: &Addr) -> bool {
+        *self == other.as_u64()
     }
 }
 
@@ -523,7 +540,8 @@ pub enum MemRegionType {
     FrameZero,
     Empty,
     BootInfo,
-    Package
+    Package,
+    Heap
 }
 
 impl MemRegionType {
@@ -577,6 +595,21 @@ pub struct MemChunk {
 }
 
 impl MemChunk {
+    #[inline]
+    pub fn start_addr(&self) -> Addr {
+        self.start_addr
+    }
+
+    #[inline]
+    pub fn end_addr(&self) -> Addr {
+        self.start_addr + self.size
+    }
+
+    #[inline]
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
     #[inline]
     pub fn range(&self) -> AddrRange {
         AddrRange {

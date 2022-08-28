@@ -7,16 +7,13 @@ use core::fmt::Write;
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
 
-mod font;
-
-const SCREEN_WIDTH: usize = 320;
-const SCREEN_HEIGHT: usize = 200;
+const VGA_BUFFER_HEIGHT: usize = 25;
+const VGA_BUFFER_WIDTH: usize = 80;
 
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-        x_pos: 0,
-        y_pos: 0,
-        color_code: ColorCode(Color::Yellow, Color::DarkGray),
+        column_pos: 0,
+        color_code: ColorCode::new(Color::White, Color::Black),
         vga_buffer: unsafe { &mut *(0xa0000 as *mut VGABuffer) }
     });
 }
@@ -46,9 +43,8 @@ pub fn clear_screen() {
     });
 }
 
-/// A color that can be put in a pixel
+/// The color of either the background or foreground of a VGA buffer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 #[repr(u8)]
 pub enum Color {
     Black       = 0x0,
@@ -69,31 +65,35 @@ pub enum Color {
     White       = 0xf
 }
 
-/// A foreground/background color code for printing characters
+/// The full color attributes of a character in the VGA buffer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ColorCode(Color, Color);
+#[repr(transparent)]
+pub struct ColorCode(u8);
 
 impl ColorCode {
-    /// Returns the background color of the color code
-    fn background(&self) -> Color {
-        self.1
+    /// Creates a new color code with colors foreground and background
+    fn new(foreground: Color, background: Color) -> Self {
+        Self(foreground as u8 | ((background as u8) << 4))
     }
-    /// Returns the foreground color of the color code
-    fn foreground(&self) -> Color {
-        self.0
-    }
+}
+
+/// A character that can be written to the VGA buffer
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+struct VGAScreenChar {
+    ascii_code: u8,
+    color_code: ColorCode
 }
 
 /// The VGA buffer to be written to for screen printing
 #[repr(transparent)]
 struct VGABuffer {
-    pixels: [[Color; SCREEN_WIDTH]; SCREEN_HEIGHT]
+    chars: [[VGAScreenChar; VGA_BUFFER_WIDTH]; VGA_BUFFER_HEIGHT]
 }
 
 /// Writes to the VGA buffer
 pub struct Writer {
-    x_pos: usize,
-    y_pos: usize,
+    column_pos: usize,
     color_code: ColorCode,
     vga_buffer: &'static mut VGABuffer
 }
@@ -104,60 +104,67 @@ impl Writer {
     fn write_byte(&mut self, c: u8) {
         if c == b'\n' {
             self.newline();
-        } else if is_printable_ascii(c) {
-            for (y, byte) in font::FONT[c].iter().enumerate() {
-                for x in 0..8 {
-                    if byte & (1 << (8 - x - 1)) == 0 {
-                        self.vga_buffer.pixels[self.y_pos + y][self.x_pos + x] = self.color_code.background();
-                    } else {
-                        self.vga_buffer.pixels[self.y_pos + y][self.x_pos + x] = self.color_code.foreground();
-                    }
-                }
-            }
-            self.x_pos += 8;
-            if self.x_pos >= SCREEN_WIDTH {
+        } else {
+            if self.column_pos >= VGA_BUFFER_WIDTH {
                 self.newline();
             }
-        } else {
-            panic!("Attempt to print unprintable character");
+            let row = VGA_BUFFER_HEIGHT - 1;
+            self.vga_buffer.chars[row][self.column_pos] = VGAScreenChar {
+                ascii_code: c,
+                color_code: self.color_code
+            };
+            self.column_pos += 1;
         }
     }
 
     fn write_string(&mut self, s: &str) {
-        for c in s.bytes() {
-            self.write_byte(c);
+        for byte in s.bytes() {
+            if is_printable(byte) {
+                self.write_byte(byte);
+            } else {
+                self.write_byte(0xfe);
+            }
         }
     }
 
     /// Prints a newline in the VGA buffer
     fn newline(&mut self) {
-        self.y_pos += 8;
-        self.x_pos = 0;
+        for row in 1..VGA_BUFFER_HEIGHT {
+            for col in 0..VGA_BUFFER_WIDTH {
+                self.vga_buffer.chars[row - 1][col] = self.vga_buffer.chars[row][col];
+            }
+        }
+        self.column_pos = 0;
+        self.clear_row(VGA_BUFFER_HEIGHT - 1);
     }
 
     /// Deletes all characters on a row of the VGA buffer
     fn clear_row(&mut self, row: usize) {
+        for col in 0..VGA_BUFFER_WIDTH {
+            self.vga_buffer.chars[row][col] = VGAScreenChar {
+                ascii_code: b' ',
+                color_code: self.color_code
+            }
+        }
     }
 
     /// Clears the screen
     fn clear_screen(&mut self) {
-        /*
-        for row in 0..SCREEN_HEIGHT {
-            for col in 0..SCREEN_WIDTH {
-                self.vga_buffer.pixels[row][col] = Color::Black;
+        for row in 0..VGA_BUFFER_HEIGHT {
+            for col in 0..VGA_BUFFER_WIDTH {
+                self.vga_buffer.chars[row][col] = VGAScreenChar {
+                    ascii_code: b' ',
+                    color_code: self.color_code
+                }
             }
         }
-        self.x_pos = 0;
-        self.y_pos = 0;
-        */
     }
-
-    fn draw_rectangle()
 }
 
-fn is_printable_ascii(c: u8) -> bool {
-    match c {
-        b' '..=b'~' => true,
+/// Determines whether byte is in the printable ASCII range
+fn is_printable(byte: u8) -> bool {
+    match byte {
+        0x20..=0x7e | b'\n' => true,
         _ => false
     }
 }

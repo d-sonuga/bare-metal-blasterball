@@ -1,0 +1,11 @@
+[package]
+name = "collections"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+machine = { path = "../machine" }
+sync = { path = "../sync" }
+lazy_static = { path = "../lazy_static" }

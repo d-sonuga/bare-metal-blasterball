@@ -15,6 +15,11 @@ build_mem_map:
     lea di, es:[_mmap]
     call map_memory
 
+switch_to_graphics_mode:
+    mov ah, 0
+    mov al, 0x13
+    int 0x10
+
 enter_protected_mode_again:
     cli
     lgdt [gdt32_descriptor]

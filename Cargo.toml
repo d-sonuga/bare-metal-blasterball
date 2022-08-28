@@ -8,7 +8,9 @@ members = [
     "lazy_static",
     "machine",
     "sync",
-    "drivers"
+    "drivers",
+    "collections",
+    "event_hook"
 ]
 
 exclude = [

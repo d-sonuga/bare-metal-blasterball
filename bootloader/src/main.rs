@@ -1,6 +1,7 @@
 #![no_main]
 #![no_std]
 #![feature(abi_x86_interrupt)]
+#![feature(alloc_error_handler)]
 
 use core::arch::{global_asm, asm};
 use core;
@@ -11,6 +12,8 @@ global_asm!(include_str!("asm/stage_3.s"));
 
 mod interrupts;
 mod gdt;
+mod allocator;
+extern crate alloc;
 
 use core::sync::atomic::{Ordering};
 use core::slice;
@@ -27,6 +30,9 @@ macro_rules! addr_to_mut_ref {
 
 // 2 Mib
 const APP_STACK_SIZE: u64 = 2u64.pow(20);
+
+// 100 Kib
+const APP_HEAP_SIZE: u64 = 100 * 2u64.pow(10);
 
 #[no_mangle]
 pub extern "C" fn main() -> ! {
@@ -71,9 +77,6 @@ pub extern "C" fn main() -> ! {
     let mut mmap = memory::create_mmap(Addr::new(mmap_addr), mmap_entry_count);
     let mut mem_allocator = MemAllocator::new(&mut mmap);
 
-    let stack_mem = mem_allocator.alloc_mem(MemRegionType::AppStack, APP_STACK_SIZE)
-        .expect("Couldn't allocate memory for the stack");
-
     let app_start_addr = Addr::new(app_start);
     let app_end_addr = Addr::new(app_end);
     let app_region_range = AddrRange::new(app_start_addr.as_u64(), app_end_addr.as_u64() + 1);
@@ -90,13 +93,34 @@ pub extern "C" fn main() -> ! {
         region_type: MemRegionType::PageTable
     });
 
-    unsafe { asm!("mov rsp, {}", in(reg) stack_mem.range().end_addr.as_u64() - 1) };
-
+    let stack_mem = mem_allocator.alloc_mem(MemRegionType::AppStack, APP_STACK_SIZE)
+        .expect("Couldn't allocate memory for the stack");
+    let heap_mem = mem_allocator.alloc_mem(MemRegionType::Heap, APP_HEAP_SIZE)
+        .expect("Couldn't allocate memory for the heap");
+    
+    let mmap_addr = Addr::new(&mmap as *const _ as u64);
     // It's important that the GDT is initialized before the interrupts
+    unsafe {
+        asm!("mov rsp, {}",
+            in(reg) stack_mem.range().end_addr.as_u64() - 1,
+        );
+    }
     gdt::init();
     interrupts::init();
+    use collections::allocator;
+    allocator::init(heap_mem);
     
-    blasterball::entry_point(mmap);
+    unsafe {
+        asm!(
+    //        "mov rsp, {}
+            "call {}",
+            //in(reg) stack_mem.range().end_addr.as_u64() - 1,
+            in(reg) blasterball::entry_point,
+            in("rdi") mmap_addr.as_u64()
+        )
+    };
+    loop {}
+    //blasterball::entry_point(mmap);
 }
 
 fn v(){}
@@ -105,4 +129,10 @@ fn v(){}
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("Panicked: {}", _info);
     loop {}
+}
+
+
+#[alloc_error_handler]
+fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
+    panic!("Attempt to allocate: {:?}", layout);
 }

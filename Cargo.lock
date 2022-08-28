@@ -16,6 +16,7 @@ name = "bootloader"
 version = "0.1.0"
 dependencies = [
  "blasterball",
+ "collections",
  "drivers",
  "lazy_static",
  "machine",
@@ -25,7 +26,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "collections"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "machine",
+ "sync",
+]
+
+[[package]]
 name = "drivers"
+version = "0.1.0"
+
+[[package]]
+name = "event_hook"
 version = "0.1.0"
 
 [[package]]

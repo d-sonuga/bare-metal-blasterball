@@ -26,6 +26,8 @@ SECTIONS {
 		*(.text .text.*)
 		*(.rodata .rodata.*)
 		*(.data .data.*)
+		*(.eh_frame_hdr)
+		*(.eh_frame)
 		*(.got)
 		. = ALIGN(512);
 		_rest_of_app_end_addr = .;
