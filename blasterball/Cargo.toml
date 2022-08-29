@@ -9,3 +9,5 @@ edition = "2021"
 printer = { path = "../printer" }
 tester = { path = "../tester" }
 machine = { path = "../machine" }
+event_hook = { path = "../event_hook" }
+drivers = { path = "../drivers" }

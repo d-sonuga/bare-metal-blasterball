@@ -1,6 +1,7 @@
 //! A contiguous growable array with heap-allocated contents
 
 use core::ops::{Drop, Index, IndexMut};
+use core::iter::Iterator;
 use core::mem;
 use crate::allocator::Allocator;
 
@@ -111,6 +112,18 @@ impl<'a, T: Clone> Vec<'a, T> {
     /// Returns the capacity of the vector
     pub fn capacity(&self) -> usize {
         self.capacity
+    }
+
+    /// Creates a new iterator over the references of the vector
+    pub fn iter(&self) -> core::slice::Iter<T> {
+        unsafe { core::slice::from_raw_parts(self.start_ptr as *const T, self.len) }
+            .iter()
+    }
+
+    /// Creates a new iterator over mutable references of the vector
+    pub fn iter_mut(&mut self) -> core::slice::IterMut<T> {
+        unsafe { core::slice::from_raw_parts_mut(self.start_ptr, self.len) }
+            .iter_mut()
     }
 }
 
@@ -256,6 +269,28 @@ mod tests {
         for i in 0..v.len() {
             assert_eq!(v[i], 0);
         }
+    }
+
+    #[test]
+    fn test_iter() {
+        let v = crate::vec![2, 4; &AlwaysSuccessfulAllocator];
+        let mut v_iter = v.iter();
+        assert_eq!(v_iter.next(), Some(&2));
+        assert_eq!(v_iter.next(), Some(&4));
+        assert_eq!(v_iter.next(), None);
+    }
+
+    #[test]
+    fn test_iter_mut() {
+        let mut v = crate::vec![4, 9; &AlwaysSuccessfulAllocator];
+        {
+            let mut v_iter_mut = v.iter_mut();
+            let first_item = v_iter_mut.next();
+            assert_eq!(first_item, Some(&mut 4));
+            let first_item = first_item.unwrap();
+            *first_item = 999_999_999;
+        }
+        assert_eq!(v[0], 999_999_999);
     }
 
     #[test]

@@ -309,7 +309,7 @@ pub struct KeyModifiers {
 
 impl KeyModifiers {
     /// Creates a new KeyModifiers instance with all modifiers unset
-    fn new() -> Self {
+    pub fn new() -> Self {
         KeyModifiers {
             lctrl: false,
             rctrl: false,
@@ -319,6 +319,10 @@ impl KeyModifiers {
             rshift: false,
             caps_lock: false
         }
+    }
+
+    pub fn shift(&self) -> bool {
+        self.lshift || self.rshift
     }
 }
 

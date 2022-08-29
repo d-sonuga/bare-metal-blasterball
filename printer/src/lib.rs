@@ -152,7 +152,7 @@ impl Writer {
         */
     }
 
-    fn draw_rectangle()
+    fn draw_rectangle() {  }
 }
 
 fn is_printable_ascii(c: u8) -> bool {

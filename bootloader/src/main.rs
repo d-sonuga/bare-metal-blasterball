@@ -12,14 +12,13 @@ global_asm!(include_str!("asm/stage_3.s"));
 
 mod interrupts;
 mod gdt;
-mod allocator;
-extern crate alloc;
 
 use core::sync::atomic::{Ordering};
 use core::slice;
 use machine::memory::{Addr, MemRegion, MemRegionType, AddrRange, MemAllocator};
 use machine::memory;
 use printer::{println, clear_screen};
+use collections::allocator;
 use blasterball;
 
 macro_rules! addr_to_mut_ref {
@@ -100,15 +99,35 @@ pub extern "C" fn main() -> ! {
     
     let mmap_addr = Addr::new(&mmap as *const _ as u64);
     // It's important that the GDT is initialized before the interrupts
+    // Saving values on the stack in registers so they can be used later
     unsafe {
-        asm!("mov rsp, {}",
+        asm!("
+            mov rdi, {}
+            mov rsi, {}
+            mov rsp, {}",
+            in(reg) &heap_mem as *const _ as u64,
+            in(reg) &mmap_addr as *const _ as u64,
             in(reg) stack_mem.range().end_addr.as_u64() - 1,
         );
     }
+    let heap_mem_addr: u64;
+    let mmap_addr_addr: u64;
+    unsafe { 
+        asm!("
+            mov {}, rdi
+            mov {}, rsi",
+            out(reg) heap_mem_addr,
+            out(reg) mmap_addr_addr
+        );
+    }
+    use machine::memory::MemChunk;
+    let heap_mem = unsafe { *(heap_mem_addr as *const MemChunk) };
+    let mmap_addr = unsafe { *(mmap_addr_addr as *const Addr) };
     gdt::init();
     interrupts::init();
     use collections::allocator;
     allocator::init(heap_mem);
+    println!("{:?}", heap_mem);
     
     unsafe {
         asm!(
@@ -131,8 +150,3 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-
-#[alloc_error_handler]
-fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
-    panic!("Attempt to allocate: {:?}", layout);
-}

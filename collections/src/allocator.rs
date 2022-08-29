@@ -32,8 +32,8 @@ lazy_static! {
 }
 
 /// Retrieves a reference to the allocator
-pub fn get_allocator() -> &LinkedListAllocator {
-    return &ALLOCATOR.lock();
+pub fn get_allocator() -> &'static Mutex<LinkedListAllocator> {
+    &ALLOCATOR
 }
 
 /// Creates a new LinkedListAllocator, assuming that all memory
@@ -72,7 +72,7 @@ impl ListNode {
 /// Note: This allocator was hacked together with raw pointers, because I didn't like the
 /// stress references were giving me
 #[derive(Debug)]
-struct LinkedListAllocator {
+pub struct LinkedListAllocator {
     head: ListNode
 }
 
@@ -129,8 +129,6 @@ impl LinkedListAllocator {
                 // ------NNNN----------NNNN-----
                 // ---------------MMMMM---------
                 let mut new_node_ptr = mem_chunk.start_addr().as_u64() as *mut ListNode;
-                //(*(*curr_node_ptr).next.unwrap()).size += mem_chunk.size();
-                //mem::swap(&mut (*curr_node_ptr).next, &mut Some(new_node_ptr));
                 let next_node_ptr = (*curr_node_ptr).next.unwrap();
                 (*new_node_ptr).size = (*next_node_ptr).size + mem_chunk.size();
                 (*new_node_ptr).next = (*next_node_ptr).next;

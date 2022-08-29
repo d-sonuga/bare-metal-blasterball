@@ -9,3 +9,4 @@ edition = "2021"
 machine = { path = "../machine" }
 sync = { path = "../sync" }
 lazy_static = { path = "../lazy_static" }
+printer = { path = "../printer" }

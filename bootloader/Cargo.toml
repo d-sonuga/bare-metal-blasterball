@@ -14,3 +14,4 @@ lazy_static = { path = "../lazy_static" }
 sync = { path = "../sync" }
 drivers = { path = "../drivers" }
 collections = { path = "../collections" }
+event_hook = { path = "../event_hook" }

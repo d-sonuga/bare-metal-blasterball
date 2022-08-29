@@ -6,6 +6,8 @@ version = 3
 name = "blasterball"
 version = "0.1.0"
 dependencies = [
+ "drivers",
+ "event_hook",
  "machine",
  "printer",
  "tester",
@@ -18,6 +20,7 @@ dependencies = [
  "blasterball",
  "collections",
  "drivers",
+ "event_hook",
  "lazy_static",
  "machine",
  "printer",
@@ -31,6 +34,7 @@ version = "0.1.0"
 dependencies = [
  "lazy_static",
  "machine",
+ "printer",
  "sync",
 ]
 
@@ -41,6 +45,14 @@ version = "0.1.0"
 [[package]]
 name = "event_hook"
 version = "0.1.0"
+dependencies = [
+ "collections",
+ "drivers",
+ "lazy_static",
+ "machine",
+ "printer",
+ "sync",
+]
 
 [[package]]
 name = "lazy_static"

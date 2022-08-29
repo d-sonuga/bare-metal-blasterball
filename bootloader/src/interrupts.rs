@@ -5,7 +5,8 @@ use machine::instructions::interrupts::enable as enable_interrupts;
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
 use drivers::keyboard::Keyboard;
-use event_hook::{EventHooker, Event, send_event};
+use event_hook::{EventHooker, Event};
+use event_hook;
 use printer::{println, print};
 use crate::gdt::DOUBLE_FAULT_IST_INDEX;
 
@@ -51,7 +52,7 @@ impl InterruptIndex {
     }
 }
 
-pub fn init(event_hooker: &EventHooker){
+pub fn init(){
     IDT.load();
     PICS.lock().init();
     enable_interrupts();
@@ -72,7 +73,7 @@ extern "x86-interrupt" fn double_fault_handler(sf: InterruptStackFrame, err_code
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(sf: InterruptStackFrame) {
-    EVENT_HOOKER.send_event(Event::Timer);
+    event_hook::send_event(Event::Timer);
     unsafe { PICS.lock().end_of_interrupt(InterruptIndex::Timer.as_u8()) }
 }
 
@@ -82,7 +83,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
     let scancode: u8 = unsafe { port.read() };
     let mut keyboard = KEYBOARD.lock();
     if let Ok(Some(event)) = keyboard.process_byte(scancode) {
-        send_event(Event::Keyboard(event.keycode, event.direction, event.key_modifiers));
+        event_hook::send_event(Event::Keyboard(event.keycode, event.direction, event.key_modifiers));
         //print!("{:?} {:?} {:?}", event.keycode, event.direction, event.key_modifiers);
     }
     unsafe { PICS.lock().end_of_interrupt(InterruptIndex::Keyboard.as_u8()) }

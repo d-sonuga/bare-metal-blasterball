@@ -3,9 +3,14 @@
 #![no_std]
 
 use core::ops::{Index, IndexMut};
-use drivers::keyboard::{Keycode, KeyDirection, KeyModifiers};
+use drivers::keyboard::{KeyCode, KeyDirection, KeyModifiers};
 use machine::instructions::interrupts::without_interrupts;
-use alloc::vec::Vec;
+use collections::vec::Vec;
+use collections::allocator::get_allocator;
+use collections::boxed::Box;
+use lazy_static::lazy_static;
+use sync::mutex::Mutex;
+use printer::println;
 
 const NO_OF_EVENTS: u8 = 1;
 
@@ -14,8 +19,8 @@ lazy_static! {
     pub static ref EVENT_HOOKER: Mutex<EventHooker> = Mutex::new(EventHooker::new());
 }
 
-pub fn hook_event(event: Event, f: F) where F: Fn() {
-    without_interrupts(||{
+pub fn hook_event(event: Event, f: fn(Event)) {
+    without_interrupts(|| {
         EVENT_HOOKER.lock().hook_event(event, f);
     });
 }
@@ -27,24 +32,38 @@ pub fn send_event(event: Event) {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[repr(u8)]
 pub enum Event {
-    Timer = 0,
+    Timer,
     Keyboard(KeyCode, KeyDirection, KeyModifiers)
 }
 
+impl Event {
+    /// Creates a random instance of Keyboard when the specific instance doesn't matter
+    pub fn keyboard() -> Self {
+        Event::Keyboard(KeyCode::Escape, KeyDirection::Up, KeyModifiers::new())
+    }
+}
+
 /// Acts as mediator between the interrupt service routines and the game code
-pub struct EventHooker<F: Fn()> {
-    handlers: [Vec<Handler<F>>; 2],
+pub struct EventHooker {
+    handlers: [Vec<'static, Handler>; 2],
     next_idx: usize
 }
 
-impl<F> EventHooker<F> {
+unsafe impl Send for EventHooker {}
+
+impl EventHooker {
+    /// Index into the handlers field for timer handlers
+    const TIMER_INDEX: usize = 0;
+    /// Index into the handlers field for keyboard handlers
+    const KEYBOARD_INDEX: usize = 1;
 
     /// Creates a new empty EventHooker
     pub fn new() -> Self {
+        use core::mem;
+        println!("{}", mem::size_of::<Handler>());
         EventHooker {
-            handlers: [vec![], vec![]],
+            handlers: [Vec::with_capacity(1, get_allocator()), Vec::with_capacity(1, get_allocator())],
             next_idx: 0
         }
     }
@@ -66,8 +85,9 @@ impl<F> EventHooker<F> {
     ///
     /// # Panics
     /// In the rare, if not impossible, occasion where next_idx reaches the max
-    pub fn hook_event(&mut self, event: Event, f: F) -> usize {
-        self[event].push(Handler::new(self.next_idx, f));
+    pub fn hook_event(&mut self, event: Event, f: fn(Event)) -> usize {
+        let next_idx = self.next_idx;
+        self[event].push(Handler { idx: next_idx, func: f });
         self.next_idx += 1;
         if self.next_idx == usize::MAX {
             panic!("next_idx has reached max");
@@ -93,7 +113,7 @@ impl<F> EventHooker<F> {
     /// ```
     pub fn send_event(&self, event: Event) {
         for handler in self[event].iter() {
-            handler.func();
+            (handler.func)(event);
         }
     }
 
@@ -113,10 +133,11 @@ impl<F> EventHooker<F> {
     /// let unhook_result = event_hooker.unhook_event(idx, Event::Timer);
     /// assert_eq!(unhook_result, Ok(()));
     /// let unhook_result = event_hooker.unhook_event(idx, EventTimer);
+    /// ```
     pub fn unhook_event(&mut self, idx: usize, event: Event) -> Result<(), Error> {
-        for (i, handler) in self.handlers[event].iter_mut().enumerate() {
-            if Handler {idx, _} = handler {
-                self.handlers[event].remove(i);
+        for (i, handler) in self[event].iter_mut().enumerate() {
+            if let Handler {idx, func} = handler {
+                self[event].remove(i);
                 return Ok(());
             }
         }
@@ -124,30 +145,38 @@ impl<F> EventHooker<F> {
     }
 }
 
-impl<F> Index<Event> for EventHooker<F> {
-    type Output = Vec<F>;
+impl Index<Event> for EventHooker {
+    type Output = Vec<'static, Handler>;
 
-    fn index(&self, index: Event) -> &Self::Output {
-        &self.handlers[index as u8 as usize]
+    fn index(&self, event: Event) -> &Self::Output {
+        match event {
+            Event::Timer => &self.handlers[Self::TIMER_INDEX],
+            Event::Keyboard(_, _, _) => &self.handlers[Self::KEYBOARD_INDEX]
+        }
+        
     }
 }
 
-impl<F> IndexMut<Event> for EventHook<F> {
-    fn index_mut(&mut self, index: Event) -> &mut Self::Output {
-        &mut self.handlers[index as u8 as usize]
+impl IndexMut<Event> for EventHooker {
+    fn index_mut(&mut self, event: Event) -> &mut Self::Output {
+        match event {
+            Event::Timer => &mut self.handlers[Self::TIMER_INDEX],
+            Event::Keyboard(_, _, _) => &mut self.handlers[Self::KEYBOARD_INDEX]
+        }
     }
 }
 
 /// A unique function in an vector associated with a particular event
-struct Handler<F> {
+#[derive(Clone)]
+pub struct Handler {
     /// A unique number in the vector associated with the handler.
     /// Used to identify the handler when removing handlers
     idx: usize,
     /// A function that is executed whenever the associated event is sent
-    func: F
+    func: fn(Event)
 }
 
-enum Error {
+pub enum Error {
     /// Returned when unhook_event is called with a non existent idx
     IdxNotFound
 }

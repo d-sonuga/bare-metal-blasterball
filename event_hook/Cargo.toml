@@ -6,3 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+collections = { path = "../collections" }
+drivers = { path = "../drivers" }
+lazy_static = { path = "../lazy_static" }
+machine = { path = "../machine" }
+sync = { path = "../sync" }
+printer = { path = "../printer" }
