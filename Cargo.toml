@@ -10,7 +10,8 @@ members = [
     "sync",
     "drivers",
     "collections",
-    "event_hook"
+    "event_hook",
+    "physics"
 ]
 
 exclude = [

@@ -10,3 +10,4 @@ num = { path = "../num" }
 lazy_static = { path = "../lazy_static" }
 sync = { path = "../sync" }
 machine = { path = "../machine" }
+physics = { path = "../physics" }

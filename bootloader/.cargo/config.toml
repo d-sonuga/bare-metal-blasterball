@@ -1,13 +1,9 @@
 [build]
 target = "../x86_64-blasterball.json"
 rustflags = [
-    "-g",
-    #"--emit=obj",
-    #"-L", "native=/home/demilade/Documents/bare-metal-blasterball/target/x86_64-blasterball/debug",
-    #"-l", "static=app_bin.ar",
     "-C", "link-args=-Tlinker.ld"
 ]
 
 [unstable]
 build-std-features = ["compiler-builtins-mem"]
-build-std = ["core", "compiler_builtins", "alloc"]
+build-std = ["core", "compiler_builtins"]

@@ -6,6 +6,7 @@ use core::fmt;
 use core::fmt::Write;
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
+use physics::Rectangle;
 
 mod font;
 
@@ -37,6 +38,10 @@ pub fn _print(args: fmt::Arguments) {
     interrupts::without_interrupts(||{
         WRITER.lock().write_fmt(args).unwrap();
     })
+}
+
+pub fn get_artist() -> &'static Mutex<Writer> {
+    &WRITER
 }
 
 pub fn clear_screen() {
@@ -152,7 +157,22 @@ impl Writer {
         */
     }
 
-    fn draw_rectangle() {  }
+    pub fn draw_rectangle(&mut self, rect: &Rectangle) {
+        // top_left -> top_right
+        // top_right -> bottom_right
+        // bottom_right -> bottom_left
+        // bottom_left -> top_left
+        self.x_pos = rect.top_left.x();
+        self.y_pos = rect.top_left.y();
+        for i in 0..rect.width {
+            self.vga_buffer.pixels[self.y_pos][self.x_pos + i] = self.color_code.foreground();
+            self.vga_buffer.pixels[self.y_pos + rect.height][self.x_pos + i] = self.color_code.foreground();
+        }
+        for i in 0..rect.height {
+            self.vga_buffer.pixels[self.y_pos + i][self.x_pos] = self.color_code.foreground();
+            self.vga_buffer.pixels[self.y_pos + i][self.x_pos + rect.width] = self.color_code.foreground();
+        }
+    }
 }
 
 fn is_printable_ascii(c: u8) -> bool {

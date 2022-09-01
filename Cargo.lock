@@ -6,9 +6,11 @@ version = 3
 name = "blasterball"
 version = "0.1.0"
 dependencies = [
+ "collections",
  "drivers",
  "event_hook",
  "machine",
+ "physics",
  "printer",
  "tester",
 ]
@@ -76,12 +78,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "physics"
+version = "0.1.0"
+
+[[package]]
 name = "printer"
 version = "0.1.0"
 dependencies = [
  "lazy_static",
  "machine",
  "num",
+ "physics",
  "sync",
 ]
 

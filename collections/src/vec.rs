@@ -55,14 +55,15 @@ impl<'a, T: Clone> Vec<'a, T> {
             let new_start_ptr = alloc_result.unwrap() as *mut T;
             for i in 0..self.len {
                 unsafe {
-                    *new_start_ptr.offset(i as isize) = (*self.start_ptr.offset(i as isize)).clone();
+                    let val = self.start_ptr.offset(i as isize).read().clone();
+                    new_start_ptr.offset(i as isize).write(val);
                 }
             }
             unsafe { self.allocator.dealloc(old_start_ptr, old_size).unwrap() };
             self.capacity = new_size;
-            self.start_ptr = new_start_ptr as *mut T;
+            self.start_ptr = new_start_ptr as *mut T;   
         }
-        unsafe { *self.start_ptr.offset(self.len as isize) = item };
+        unsafe { self.start_ptr.offset(self.len as isize).write(item) };
         self.len += 1;
     }
 
@@ -93,11 +94,12 @@ impl<'a, T: Clone> Vec<'a, T> {
         if idx >= self.len {
             panic!("Invalid index");
         }
-        let value = unsafe { (*self.start_ptr.offset(idx as isize)).clone() };
+        let value = unsafe { (self.start_ptr.offset(idx as isize).read()).clone() };
         for i in idx + 1..self.len {
             let i = i as isize;
             unsafe {
-                *self.start_ptr.offset(i - 1) = (*self.start_ptr.offset(i)).clone();
+                let val = (self.start_ptr.offset(i).read()).clone();
+                self.start_ptr.offset(i - 1).write(val);
             }
         }
         self.len -= 1;
@@ -129,7 +131,11 @@ impl<'a, T: Clone> Vec<'a, T> {
 
 impl<'a, T: Clone> Drop for Vec<'a, T> {
     fn drop(&mut self) {
-        unsafe { self.allocator.dealloc(self.start_ptr as *mut u8, self.capacity).unwrap() };
+        use core::ptr;
+        unsafe {
+            ptr::drop_in_place(ptr::slice_from_raw_parts_mut(self.start_ptr, self.len));
+            self.allocator.dealloc(self.start_ptr as *mut u8, self.capacity).unwrap()
+        };
     }
 }
 
@@ -154,7 +160,7 @@ macro_rules! vec {
     // Remember, over-optimization is the root of all evil
     ($($e:expr),+ ; $alloc:ident) => {
         {
-            let mut v = Vec::with_capacity(1, $alloc);
+            let mut v = $crate::vec::Vec::with_capacity(1, $alloc);
             $({
                 v.push($e);
             })+
@@ -163,7 +169,7 @@ macro_rules! vec {
     };
     ($e:expr ; $n:expr ; $alloc:ident) => {
         {
-            let mut v = Vec::with_capacity($n, $alloc);
+            let mut v = $crate::vec::Vec::with_capacity($n, $alloc);
             for _ in 0..$n {
                 v.push($e);
             }
@@ -173,13 +179,13 @@ macro_rules! vec {
     ($($e:expr),+ ; &$alloc:ident) => {
         {
             let allocator = &$alloc;
-            vec![$($e),+ ; allocator]
+            $crate::vec![$($e),+ ; allocator]
         }
     };
     ($e:expr ; $n:expr ; &$alloc:ident) => {
         {
             let allocator = &$alloc;
-            vec![$e ; $n ; allocator]
+            $crate::vec![$e ; $n ; allocator]
         }
     }
 }
@@ -326,6 +332,20 @@ mod tests {
         let mut v: Vec<bool> = Vec::with_capacity(3, &cond_failure_allocator);
         unsafe { mutate_cond_fail_alloc!(cond_failure_allocator, should_fail => true) };
         // dealloc is called on drop
+    }
+
+    #[test]
+    fn test_vec_of_structs() {
+        #[derive(Clone)]
+        struct SomeValues {
+            x: i32,
+            y: usize,
+            z: i128
+        };
+        let mut v = Vec::with_capacity(2, &AlwaysSuccessfulAllocator);
+        v.push(SomeValues { x: 32, y: 54_444, z: 889_987_233_554 });
+        v.push(SomeValues { x: 890, y: 5_343, z: 335_232 });
+        assert_eq!(v.len(), 2);
     }
 
     struct AlwaysSuccessfulAllocator;

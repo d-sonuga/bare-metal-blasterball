@@ -11,3 +11,5 @@ tester = { path = "../tester" }
 machine = { path = "../machine" }
 event_hook = { path = "../event_hook" }
 drivers = { path = "../drivers" }
+physics = { path = "../physics" }
+collections = { path = "../collections" }

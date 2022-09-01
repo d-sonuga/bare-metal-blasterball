@@ -1,7 +1,6 @@
 #![no_main]
 #![no_std]
 #![feature(abi_x86_interrupt)]
-#![feature(alloc_error_handler)]
 
 use core::arch::{global_asm, asm};
 use core;
@@ -43,9 +42,9 @@ pub extern "C" fn main() -> ! {
             pop rbx
         ");
     }
-    let long_mode_switch_success_msg = "Successfully switched to long mode";
+    //let long_mode_switch_success_msg = "Successfully switched to long mode";
     clear_screen();
-    println!("{}", long_mode_switch_success_msg);
+    //println!("{}", long_mode_switch_success_msg);
     let mmap_addr: u64;
     let mmap_entry_count: u64;
     let app_start: u64;
@@ -127,7 +126,6 @@ pub extern "C" fn main() -> ! {
     interrupts::init();
     use collections::allocator;
     allocator::init(heap_mem);
-    println!("{:?}", heap_mem);
     
     unsafe {
         asm!(
@@ -142,7 +140,6 @@ pub extern "C" fn main() -> ! {
     //blasterball::entry_point(mmap);
 }
 
-fn v(){}
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
