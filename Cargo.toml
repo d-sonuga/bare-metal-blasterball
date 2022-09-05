@@ -2,7 +2,7 @@
 members = [
     "bootloader",
     "blasterball",
-    "printer",
+    "artist",
     "num",
     "tester",
     "lazy_static",

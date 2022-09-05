@@ -7,7 +7,7 @@ use sync::mutex::Mutex;
 use drivers::keyboard::Keyboard;
 use event_hook::{EventHooker, Event};
 use event_hook;
-use printer::{println, print};
+use artist::{println, print};
 use crate::gdt::DOUBLE_FAULT_IST_INDEX;
 
 /// The base IDT index number of the first PIC's IRQs

@@ -1,8 +1,10 @@
 //! A contiguous growable array with heap-allocated contents
 
 use core::ops::{Drop, Index, IndexMut};
+use core::cmp::PartialEq;
 use core::iter::Iterator;
 use core::mem;
+use core::fmt;
 use crate::allocator::Allocator;
 
 pub struct Vec<'a, T: Clone> {
@@ -155,6 +157,43 @@ impl<'a, T: Clone> IndexMut<usize> for Vec<'a, T> {
     }
 }
 
+impl<'a, 'b, T: PartialEq + Clone> PartialEq<Vec<'b, T>> for Vec<'a, T> {
+    fn eq(&self, other: &Vec<'b, T>) -> bool {
+        for (val1, val2) in self.iter().zip(other.iter()) {
+            if val1 != val2 {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl<'a, T: Clone + fmt::Debug> fmt::Debug for Vec<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("Vec [\n")?;
+        self.iter()
+            .enumerate()
+            .for_each(|(i, val)| {
+                f.write_fmt(format_args!("{:?}", val)).unwrap();
+                if i != self.len() {
+                    f.write_str(", ").unwrap();
+                }
+            });
+        f.write_str("]")?;
+        Ok(())
+    }
+}
+
+impl<'a, T: Clone> Clone for Vec<'a, T> {
+    fn clone(&self) -> Self {
+        let mut new_vec = Vec::with_capacity(self.capacity, self.allocator);
+        self
+            .iter()
+            .for_each(|val| new_vec.push(val.clone()));
+        new_vec
+    }
+}
+
 #[macro_export]
 macro_rules! vec {
     // Remember, over-optimization is the root of all evil
@@ -185,6 +224,13 @@ macro_rules! vec {
     ($e:expr ; $n:expr ; &$alloc:ident) => {
         {
             let allocator = &$alloc;
+            $crate::vec![$e ; $n ; allocator]
+        }
+    };
+    ($e:expr ; $n:expr) => {
+        {
+            use $crate::allocator::get_allocator;
+            let allocator = get_allocator();
             $crate::vec![$e ; $n ; allocator]
         }
     }
@@ -346,6 +392,15 @@ mod tests {
         v.push(SomeValues { x: 32, y: 54_444, z: 889_987_233_554 });
         v.push(SomeValues { x: 890, y: 5_343, z: 335_232 });
         assert_eq!(v.len(), 2);
+    }
+
+    #[test]
+    fn vec_clone() {
+        let v = crate::vec![4, 5, 87777; &AlwaysSuccessfulAllocator];
+        let other_v = v.clone();
+        assert_eq!(v, other_v);
+        assert_eq!(v.len(), other_v.len());
+        assert_eq!(v.capacity(), other_v.capacity());
     }
 
     struct AlwaysSuccessfulAllocator;

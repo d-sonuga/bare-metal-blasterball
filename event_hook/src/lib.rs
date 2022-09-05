@@ -12,7 +12,7 @@ use collections::vec::Vec;
 use collections::allocator::{get_allocator, Allocator};
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
-use printer::println;
+use artist::println;
 
 pub mod boxed_fn;
 use boxed_fn::BoxedFn;

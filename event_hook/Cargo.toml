@@ -11,4 +11,4 @@ drivers = { path = "../drivers" }
 lazy_static = { path = "../lazy_static" }
 machine = { path = "../machine" }
 sync = { path = "../sync" }
-printer = { path = "../printer" }
+artist = { path = "../artist" }

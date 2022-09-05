@@ -1,6 +1,6 @@
 use crate::{Num, BitState};
 
-#[test_case]
+#[test]
 fn test_bit_lengths(){
     assert_eq!(u8::BIT_LENGTH, 8);
     assert_eq!(u16::BIT_LENGTH, 16);
@@ -15,7 +15,7 @@ fn test_bit_lengths(){
     assert_eq!(i128::BIT_LENGTH, 128);
 }
 
-#[test_case]
+#[test]
 fn test_get_set_unset_bit(){
     for i in 0..8 {
         let mut n = 0u8;
@@ -27,7 +27,7 @@ fn test_get_set_unset_bit(){
     }
 }
 
-#[test_case]
+#[test]
 fn test_get_set_bits(){
     let mut n = 0u16;
     n.set_bits(0..3, 0b101);
@@ -37,3 +37,19 @@ fn test_get_set_bits(){
     let mut n = 0b11011u32;
     assert_eq!(0b110, n.get_bits(2..5));
 }
+/*
+#[test]
+fn test_sin() {
+    assert_eq!(90i32.sin(), 1);
+    assert_eq!(0i128.sin(), 0);
+    assert_eq!(30i32.sin(), 1);
+    assert_eq!(30.0f32.sin(), 0.5);
+    assert_eq!(15i8.sin(), 0);
+    assert_eq!(15.0f32.sin(), 0.2588);
+    assert_eq!(180f64.sin(), 0.0);
+    assert_eq!(360i16.sin(), 0);
+    assert_eq!(953i64.sin(), -1);
+    assert_eq!(953f32.sin(), -0.7986);
+}
+
+*/

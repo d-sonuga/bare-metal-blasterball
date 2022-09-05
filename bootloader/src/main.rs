@@ -16,7 +16,7 @@ use core::sync::atomic::{Ordering};
 use core::slice;
 use machine::memory::{Addr, MemRegion, MemRegionType, AddrRange, MemAllocator};
 use machine::memory;
-use printer::{println, clear_screen};
+use artist::{println, clear_screen};
 use collections::allocator;
 use blasterball;
 
@@ -143,7 +143,52 @@ pub extern "C" fn main() -> ! {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
+    // A function that allows for printing independently of the artist
+    /*use artist::{is_printable_ascii, font, Color};
+    impl PanicWriter {
+        fn print_char(&mut self, c: u8) {
+            let mut vga_buffer = 0xa0000 as *mut u8;
+            if c == b'\n' {
+                self.print_char(b' ');
+            } else if is_printable_ascii(c) {
+                for (y, byte) in font::FONT[c].iter().enumerate() {
+                    for x in 0..8 {
+                        let y = (y + self.y_pos) as isize;
+                        let x = (x + self.x_pos) as isize;
+                        unsafe {
+                            if byte & (1 << (8 - x - 1)) == 0 {
+                                *vga_buffer.offset(y*320+x) = Color::Black;
+                            } else {
+                                *vga_buffer.offset(y*320+x) = Color::Yellow;
+                            }
+                        }
+                    }
+                }
+                self.x_pos += 8;
+                if self.x_pos >= 320 {
+                    self.y_pos += 1;
+                    self.x_pos = 0;
+                }
+            } else {
+                self.print_char(b'?');
+            }
+        }
+    }
+    struct PanicWriter { x_pos: usize, y_pos: usize }
+    use core::fmt;
+    use core::fmt::Write;
+    impl fmt::Write for PanicWriter {
+        fn write_str(&mut self, s: &str) -> fmt::Result {
+            for c in s.bytes() {
+                self.print_char(c);
+            }
+            Ok(())
+        }
+    }*/
     println!("Panicked: {}", _info);
+    //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
+    //panic_writer.write_str("Panicked: ");
+    //panic_writer.write_fmt(format_args!("{}", _info));
     loop {}
 }
 

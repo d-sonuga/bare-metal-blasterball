@@ -2,7 +2,7 @@
 
 #![cfg_attr(not(test), no_std)]
 #![feature(custom_test_frameworks)]
-#![cfg_attr(test, test_runner(tester::test_runner))]
+//#![cfg_attr(test, test_runner(tester::test_runner))]
 
 
 #[cfg(test)]
@@ -103,6 +103,8 @@ pub trait Num: NumOps + PartialEq + PartialOrd + Sized {
     fn to_u8(&self) -> u8;
 
     fn to_u64(&self) -> u64;
+
+    fn to_u128(&self) -> u128;
 }
 
 pub trait NumOps<Rhs=Self, Output=Self>:
@@ -122,9 +124,9 @@ impl <T, Rhs, Output> NumOps<Rhs, Output> for T where
     {}
 
 macro_rules! impl_num {
-    ($($t:ty)+) => {$(
-        impl Num for $t {
-            const BIT_LENGTH: usize = mem::size_of::<$t>() * 8;
+    ($($T:ty)+) => {$(
+        impl Num for $T {
+            const BIT_LENGTH: usize = mem::size_of::<$T>() * 8;
             
             fn set_bit(&mut self, i: usize){
                 assert!(i < Self::BIT_LENGTH);
@@ -177,11 +179,18 @@ macro_rules! impl_num {
             fn to_u64(&self) -> u64 {
                 *self as u64
             }
+
+            fn to_u128(&self) -> u128 {
+                *self as u128
+            }
         }
+        
+        //impl_div!{ $T => u8 u16 u32 u64 u128 i8 i16  }
+        
     )+}
 }
 
-impl_num! { u8 u16 u32 u64 u128 i8 i16 i32 i64 i128 }
+impl_num! { u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize }
 
 /// Represents whether or not a bit has been set
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -202,4 +211,22 @@ fn to_range<R: RangeBounds<usize>>(range: R, max_length: usize) -> Range<usize> 
         Bound::Unbounded    => max_length - 1
     };
     start..end
+}
+
+/// A trait that provides methods that can only be used on signed numbers
+pub trait SignedNum: Num {
+    /// Calculates the sin of a number in degrees
+    ///
+    /// This is a SignedNum method because sines can be negative
+    fn sin<N: Num>(&self) -> N;
+}
+
+macro_rules! impl_signed_num {
+    ($($T:ty)+) => {$(
+        impl SignedNum for $T {
+            fn sin(&self) -> $T {
+
+            }
+        }
+    )+}
 }
