@@ -4,28 +4,32 @@
 
 use core::fmt;
 use core::fmt::Write;
+use core::ops::{Index, IndexMut};
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
 use physics::{Rectangle, Point};
 use collections::vec::Vec;
 use collections::vec;
 use machine::port::Port;
-use num::Num;
+use num::Integer;
 
 pub mod font;
 pub mod bitmap;
 
 use bitmap::Bitmap;
 
-const SCREEN_WIDTH: usize = 320;
-const SCREEN_HEIGHT: usize = 200;
+pub const SCREEN_WIDTH: usize = 320;
+pub const SCREEN_HEIGHT: usize = 200;
 
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         x_pos: 0,
         y_pos: 0,
         color_code: ColorCode(Color(Color::Yellow), Color(Color::Black)),
-        vga_buffer: unsafe { &mut *(0xa0000 as *mut VGABuffer) }
+        vga_buffer: unsafe { &mut *(0xa0000 as *mut VGABuffer) },
+        double_buffer: VGABuffer {
+            pixels: [[Color(Color::Black); SCREEN_WIDTH]; SCREEN_HEIGHT]
+        }
     });
 }
 
@@ -107,12 +111,26 @@ struct VGABuffer {
     pixels: [[Color; SCREEN_WIDTH]; SCREEN_HEIGHT]
 }
 
+impl Index<usize> for VGABuffer {
+    type Output = [Color; SCREEN_WIDTH];
+    fn index(&self, idx: usize) -> &[Color; SCREEN_WIDTH] {
+        &self.pixels[idx]
+    }
+}
+
+impl IndexMut<usize> for VGABuffer {
+    fn index_mut(&mut self, idx: usize) -> &mut [Color; SCREEN_WIDTH] {
+        &mut self.pixels[idx]
+    }
+}
+
 /// Writes to the VGA buffer
 pub struct Writer {
     x_pos: usize,
     y_pos: usize,
     color_code: ColorCode,
-    vga_buffer: &'static mut VGABuffer
+    vga_buffer: &'static mut VGABuffer,
+    double_buffer: VGABuffer
 }
 
 impl Writer {
@@ -125,9 +143,9 @@ impl Writer {
             for (y, byte) in font::FONT[c].iter().enumerate() {
                 for x in 0..8 {
                     if byte & (1 << (8 - x - 1)) == 0 {
-                        self.vga_buffer.pixels[self.y_pos + y][self.x_pos + x] = self.color_code.background();
+                        self.vga_buffer[self.y_pos + y][self.x_pos + x] = self.color_code.background();
                     } else {
-                        self.vga_buffer.pixels[self.y_pos + y][self.x_pos + x] = self.color_code.foreground();
+                        self.vga_buffer[self.y_pos + y][self.x_pos + x] = self.color_code.foreground();
                     }
                 }
             }
@@ -135,6 +153,9 @@ impl Writer {
             if self.x_pos >= SCREEN_WIDTH {
                 self.newline();
                 self.x_pos = 0;
+            }
+            if self.y_pos >= SCREEN_HEIGHT - 8 {
+                self.y_pos = 0;
             }
         } else {
             self.write_byte(b'?');
@@ -147,8 +168,8 @@ impl Writer {
         }
     }
 
-    fn printint<T: Num>(&mut self, n: T) {
-        fn inner_printint<T: Num>(w: &mut Writer, n: T) {
+    fn printint<T: Integer>(&mut self, n: T) {
+        fn inner_printint<T: Integer>(w: &mut Writer, n: T) {
             if n.to_u8() < 10 {
                 w.write_byte(n.to_u8() + 48);
             } else {
@@ -185,7 +206,7 @@ impl Writer {
         self.x_pos = 0;
         self.y_pos = 0;
     }
-
+/*
     pub fn draw_rectangle(&mut self, rect: &Rectangle) {
         // top_left -> top_right
         // top_right -> bottom_right
@@ -194,12 +215,12 @@ impl Writer {
         self.x_pos = rect.top_left.x();
         self.y_pos = rect.top_left.y();
         for i in 0..rect.width {
-            self.vga_buffer.pixels[self.y_pos][self.x_pos + i] = self.color_code.foreground();
-            self.vga_buffer.pixels[self.y_pos + rect.height][self.x_pos + i] = self.color_code.foreground();
+            self.vga_buffer[self.y_pos][self.x_pos + i] = self.color_code.foreground();
+            self.vga_buffer[self.y_pos + rect.height][self.x_pos + i] = self.color_code.foreground();
         }
         for i in 0..rect.height {
-            self.vga_buffer.pixels[self.y_pos + i][self.x_pos] = self.color_code.foreground();
-            self.vga_buffer.pixels[self.y_pos + i][self.x_pos + rect.width] = self.color_code.foreground();
+            self.vga_buffer[self.y_pos + i][self.x_pos] = self.color_code.foreground();
+            self.vga_buffer[self.y_pos + i][self.x_pos + rect.width] = self.color_code.foreground();
         }
     }
 
@@ -211,37 +232,60 @@ impl Writer {
         self.x_pos = rect.top_left.x();
         self.y_pos = rect.top_left.y();
         for i in 0..rect.width {
-            self.vga_buffer.pixels[self.y_pos][self.x_pos + i] = self.color_code.background();
-            self.vga_buffer.pixels[self.y_pos + rect.height][self.x_pos + i] = self.color_code.background();
+            self.vga_buffer[self.y_pos][self.x_pos + i] = self.color_code.background();
+            self.vga_buffer[self.y_pos + rect.height][self.x_pos + i] = self.color_code.background();
         }
         for i in 0..rect.height {
-            self.vga_buffer.pixels[self.y_pos + i][self.x_pos] = self.color_code.background();
-            self.vga_buffer.pixels[self.y_pos + i][self.x_pos + rect.width] = self.color_code.background();
+            self.vga_buffer[self.y_pos + i][self.x_pos] = self.color_code.background();
+            self.vga_buffer[self.y_pos + i][self.x_pos + rect.width] = self.color_code.background();
         }
     }
+*/
 
     pub fn draw_bitmap(&mut self, pos: Point, bitmap: &Bitmap) {
-        self.y_pos = pos.y();
-        self.x_pos = pos.x();
         for y in 0..bitmap.height() {
             for x in 0..bitmap.width() {
                 let pixel_array_y = bitmap.height() - y - 1;
-                self.vga_buffer.pixels[self.y_pos + y][self.x_pos + x] = 
-                    Color::new(bitmap.image_data[pixel_array_y*bitmap.width()+x]);
+                if pos_is_within_screen_bounds(pos, x, y) {
+                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = 
+                        Color::new(bitmap.image_data[pixel_array_y*bitmap.width()+x]);
+                }
+            }
+        }
+        for y in 0..SCREEN_HEIGHT {
+            for x in 0..SCREEN_HEIGHT {
+                self.vga_buffer[y][x] = self.double_buffer[y][x];
             }
         }
     }
 
-    pub fn erase_bitmap(&mut self, pos: Point, bitmap: &Bitmap) {
+    pub fn move_bitmap(&mut self, old_pos: Point, new_pos: Point, bitmap: &Bitmap) {
         for y in 0..bitmap.height() {
             for x in 0..bitmap.width() {
-                self.vga_buffer.pixels[pos.y() + y][pos.x() + x] = Color(Color::Black);
+                let pixel_array_y = bitmap.height() - y - 1;
+                if pos_is_within_screen_bounds(old_pos, x, y) {
+                    self.double_buffer[old_pos.y().to_usize() + y][old_pos.x().to_usize() + x] = Color(Color::Black);
+                }
+            }
+        }
+        for y in 0..bitmap.height() {
+            for x in 0..bitmap.width() {
+                let pixel_array_y = bitmap.height() - y - 1;
+                if pos_is_within_screen_bounds(new_pos, x, y) {
+                    self.double_buffer[new_pos.y().to_usize() + y][new_pos.x().to_usize() + x] = 
+                        Color::new(bitmap.image_data[pixel_array_y*bitmap.height()+x]);
+                }
+            }
+        }
+        for y in 0..SCREEN_HEIGHT {
+            for x in 0..SCREEN_WIDTH {
+                self.vga_buffer[y][x] = self.double_buffer[y][x];
             }
         }
     }
 }
 
-fn wait_for_retrace() {
+pub fn wait_for_retrace() {
     const INPUT_STATUS: u16 = 0x03da;
     const VRETRACE: u8 = 0x08;
     let input_status_port = Port::new(INPUT_STATUS);
@@ -256,9 +300,51 @@ pub fn is_printable_ascii(c: u8) -> bool {
     }
 }
 
+pub fn pos_is_within_screen_bounds(pos: Point, dx: usize, dy: usize) -> bool {
+    pos.y() >= 0 && pos.x() >= 0 
+        && pos.y().to_usize() + dy < 200
+        && pos.x().to_usize() + dx < 320
+}
+
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(s);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pos_is_within_screen_bounds() {
+        let pos = Point(0, 0);
+        let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
+        assert!(is_within_bounds);
+
+        let pos = Point(320, 200);
+        let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
+        assert!(!is_within_bounds);
+
+        let pos = Point(200, 220);
+        let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
+        assert!(!is_within_bounds);
+
+        let pos = Point(321, 200);
+        let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
+        assert!(!is_within_bounds);
+
+        let pos = Point(322, 221);
+        let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
+        assert!(!is_within_bounds);
+
+        let pos = Point(-1, 12);
+        let is_within_bounds = pos_is_within_screen_bounds(pos, 2, 43);
+        assert!(!is_within_bounds);
+
+        let pos = Point(100, 201);
+        let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
+        assert!(!is_within_bounds);
     }
 }

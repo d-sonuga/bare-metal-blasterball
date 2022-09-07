@@ -8,7 +8,7 @@ use core::fmt;
 use core::ops::{Index, IndexMut};
 use crate::memory::Addr;
 use crate::DescriptorTablePointer;
-use num::Num;
+use num::Integer;
 
 /// The number of none exception entries in the IDT
 const NO_OF_INTERRUPTS: usize = 224;

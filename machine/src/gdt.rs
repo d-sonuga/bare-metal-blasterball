@@ -2,7 +2,7 @@
 
 use core::{fmt, mem};
 use core::arch::asm;
-use num::Num;
+use num::Integer;
 use crate::{DescriptorTablePointer, tss::TaskStateSegment, Addr};
 
 /// A self-imposed limit on the number of entries that should be in the GDT

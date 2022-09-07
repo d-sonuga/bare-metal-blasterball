@@ -119,43 +119,12 @@ struct BitmapDIBHeader {
     reserved: [u8; 4]
 }
 
-
-use sync::mutex::MutexGuard;
 impl Bitmap {
-    /*fn rotate_palette(&mut self, w: &mut Writer) {
-        let color = self.palette[self.palette.len() - 1];
-        for i in 0..self.palette.len() {
-            if i != self.palette.len() - 1 {
-                self.palette[i + 1] = self.palette[i];
-            }
-        }
-        self.palette[0] = color;
-    }*/
     /// Creates a representation of a bitmap in memory from the raw bytes `raw_bytes`
-    pub fn from(raw_bytes: &[u8], mut w: MutexGuard<crate::Writer>) -> Result<Self, &'static str> {
-        // 4938 bytes
-        //w.write_byte(raw_bytes[0]);
-        //w.write_byte(raw_bytes[1]);
-        //let x = [raw_bytes[10], raw_bytes[11], raw_bytes[12], raw_bytes[13]];
-        //w.printint(u32::from_le_bytes(x));
-        //loop {}
-        //(10..=13).into_iter().for_each(|i| { w.printint(raw_bytes[i]); w.write_byte(b' ') });
-        //loop {}
-        //let image_size = [raw_bytes[2], raw_bytes[3], raw_bytes[4], raw_bytes[5]];
-        //(2..=5).into_iter().for_each(|i| { w.printint(raw_bytes[i]); w.write_byte(b' ') });
-        //(10..=13).into_iter().for_each(|i| { w.printint(raw_bytes[i]); w.write_byte(b' ') });
-        //let compression = 30;
-        //(compression..=33).into_iter().for_each(|i| { w.printint(raw_bytes[i]); w.write_byte(b' ') });
-        //w.printint(raw_bytes[10]);
-        //loop {}
+    pub fn from(raw_bytes: &[u8]) -> Result<Self, &'static str> {
         if !is_valid_bitmap(raw_bytes) {
             return Err("Bitmap is not valid");
         }
-        use core::fmt::Write;
-        //(18..=21).into_iter().for_each(|i| { w.write_fmt(format_args!("{} ", raw_bytes[i])); });
-        //w.write_str("height: ");
-        //(22..=25).into_iter().for_each(|i| { w.write_fmt(format_args!("{} ", raw_bytes[i])); });
-        //loop {}
         unsafe {
             const FILE_HEADER_SIZE: isize = core::mem::size_of::<BitmapFileHeader>() as isize;
             const DIB_HEADER_SIZE: isize = core::mem::size_of::<BitmapDIBHeader>() as isize;

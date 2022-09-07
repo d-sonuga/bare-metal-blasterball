@@ -42,9 +42,6 @@ pub extern "C" fn main() -> ! {
             pop rbx
         ");
     }
-    //let long_mode_switch_success_msg = "Successfully switched to long mode";
-    clear_screen();
-    //println!("{}", long_mode_switch_success_msg);
     let mmap_addr: u64;
     let mmap_entry_count: u64;
     let app_start: u64;
@@ -90,7 +87,6 @@ pub extern "C" fn main() -> ! {
         range: page_table_region_range,
         region_type: MemRegionType::PageTable
     });
-
     let stack_mem = mem_allocator.alloc_mem(MemRegionType::AppStack, APP_STACK_SIZE)
         .expect("Couldn't allocate memory for the stack");
     let heap_mem = mem_allocator.alloc_mem(MemRegionType::Heap, APP_HEAP_SIZE)
@@ -144,7 +140,7 @@ pub extern "C" fn main() -> ! {
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     // A function that allows for printing independently of the artist
-    /*use artist::{is_printable_ascii, font, Color};
+    use artist::{is_printable_ascii, font, Color};
     impl PanicWriter {
         fn print_char(&mut self, c: u8) {
             let mut vga_buffer = 0xa0000 as *mut u8;
@@ -153,20 +149,20 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
             } else if is_printable_ascii(c) {
                 for (y, byte) in font::FONT[c].iter().enumerate() {
                     for x in 0..8 {
-                        let y = (y + self.y_pos) as isize;
-                        let x = (x + self.x_pos) as isize;
+                        let char_y = (y + self.y_pos) as isize;
+                        let char_x = (x + self.x_pos) as isize;
                         unsafe {
                             if byte & (1 << (8 - x - 1)) == 0 {
-                                *vga_buffer.offset(y*320+x) = Color::Black;
+                                *vga_buffer.offset(char_y*320+char_x) = Color::Black;
                             } else {
-                                *vga_buffer.offset(y*320+x) = Color::Yellow;
+                                *vga_buffer.offset(char_y*320+char_x) = Color::Yellow;
                             }
                         }
                     }
                 }
                 self.x_pos += 8;
                 if self.x_pos >= 320 {
-                    self.y_pos += 1;
+                    self.y_pos += 8;
                     self.x_pos = 0;
                 }
             } else {
@@ -184,11 +180,11 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
             }
             Ok(())
         }
-    }*/
-    println!("Panicked: {}", _info);
-    //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
-    //panic_writer.write_str("Panicked: ");
-    //panic_writer.write_fmt(format_args!("{}", _info));
+    }
+    //println!("Panicked: {}", _info);
+    let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
+    panic_writer.write_str("Panicked: ");
+    panic_writer.write_fmt(format_args!("{}", _info));
     loop {}
 }
 

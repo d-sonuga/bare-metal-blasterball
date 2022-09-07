@@ -91,6 +91,9 @@ dependencies = [
 [[package]]
 name = "physics"
 version = "0.1.0"
+dependencies = [
+ "num",
+]
 
 [[package]]
 name = "sync"

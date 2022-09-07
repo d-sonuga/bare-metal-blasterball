@@ -2,7 +2,7 @@
 
 use core::ops::{Add, Sub, BitAnd, BitOr, Index, IndexMut, AddAssign};
 use core::{slice, fmt};
-use num::Num;
+use num::Integer;
 
 const MAX_MEM_MAP_SIZE: usize = 64;
 
