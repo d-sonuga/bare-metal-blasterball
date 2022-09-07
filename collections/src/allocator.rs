@@ -10,7 +10,7 @@ use lazy_static::lazy_static;
 pub unsafe trait Allocator {
     unsafe fn alloc(&self, size_of_type: usize, size_to_alloc: usize) -> Result<*mut u8, Error>;
 
-    unsafe fn dealloc(&self, ptr: *mut u8, size_to_delloc: usize)  -> Result<(), Error>;
+    unsafe fn dealloc(&self, ptr: *mut u8, size_to_dealloc: usize)  -> Result<(), Error>;
 }
 
 #[derive(Debug, Copy, Clone)]

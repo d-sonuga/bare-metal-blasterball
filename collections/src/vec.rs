@@ -61,7 +61,7 @@ impl<'a, T: Clone> Vec<'a, T> {
                     new_start_ptr.offset(i as isize).write(val);
                 }
             }
-            unsafe { self.allocator.dealloc(old_start_ptr, old_size).unwrap() };
+            unsafe { self.allocator.dealloc(old_start_ptr, old_size * mem::size_of::<T>()).unwrap() };
             self.capacity = new_size;
             self.start_ptr = new_start_ptr as *mut T;   
         }
