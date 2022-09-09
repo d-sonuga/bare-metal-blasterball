@@ -128,7 +128,7 @@ pub extern "C" fn main() -> ! {
     //        "mov rsp, {}
             "call {}",
             //in(reg) stack_mem.range().end_addr.as_u64() - 1,
-            in(reg) blasterball::entry_point,
+            in(reg) blasterball::game_entry_point,
             in("rdi") mmap_addr.as_u64()
         )
     };

@@ -50,9 +50,10 @@ fn call_boxed<F>(boxed_fn_ptr: *const BoxedFn, event: Event) where F: FnMut(Even
 /// Drops the boxed function
 fn drop<F>(boxed_fn_ptr: *const BoxedFn) where F: FnMut(Event) {
     unsafe {
-        //let base_fn_ptr = (*boxed_fn_ptr).0.as_ptr();
-        //let concrete_ptr: *mut Repr<F> = base_fn_ptr as *mut Repr<F>;
-        //Box::<F>::from_raw(concrete_ptr, (*boxed_fn_ptr).1);
+        let base_fn_ptr = (*boxed_fn_ptr).0.as_ptr();
+        let concrete_ptr: *mut Repr<F> = base_fn_ptr as *mut Repr<F>;
+        let allocator = (*boxed_fn_ptr).1;
+        Box::<Repr<F>>::from_raw(concrete_ptr, allocator);
         // Box is dropped at the end of the scope
     }
 }
@@ -154,6 +155,31 @@ pub mod tests {
         ];
         v.iter().for_each(|f| f(Event::Timer));
         assert_eq!(no_of_fns_called, 3);
+    }
+
+    #[test]
+    fn test_boxed_fn_drop() {
+        let mut x = 1;
+        {
+            let allocator = &AlwaysSuccessfulAllocator;
+            box_fn!(|_| x += 1, allocator);
+        }
+    }
+
+    #[test]
+    fn test_boxed_fn_remove_from_vec() {
+        let mut x = 1;
+        let allocator = &AlwaysSuccessfulAllocator;
+        {
+            let mut v: collections::vec::Vec<BoxedFn> = collections::vec![
+                box_fn!(|_| x += 1, allocator),
+                box_fn!(|_| x += 1, allocator),
+                box_fn!(|_| x += 1, allocator);
+                allocator
+            ];
+            v.remove(1);
+            assert_eq!(v.len(), 2);
+        }
     }
 
     pub struct AlwaysSuccessfulAllocator;

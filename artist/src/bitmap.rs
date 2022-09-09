@@ -27,7 +27,9 @@ pub struct Bitmap {
     /// so there is no need to change the VGA palette to draw the bitmap
     color_table: &'static [u8],
     /// The actual bit array which gets drawn on the screen
-    pub image_data: &'static [u8]
+    pub image_data: &'static [u8],
+    /// Defines which color in the bitmap image data should be considered transparent
+    pub transparency: Transparency
 }
 
 /// The start of the bitmap file which is used for identification
@@ -122,7 +124,7 @@ struct BitmapDIBHeader {
 
 impl Bitmap {
     /// Creates a representation of a bitmap in memory from the raw bytes `raw_bytes`
-    pub fn from(raw_bytes: &[u8]) -> Result<Self, &'static str> {
+    pub fn from(raw_bytes: &[u8], transparency: Transparency) -> Result<Self, &'static str> {
         if !is_valid_bitmap(raw_bytes) {
             return Err("Bitmap is not valid");
         }
@@ -140,7 +142,8 @@ impl Bitmap {
                 file_header,
                 dib_header,
                 color_table,
-                image_data
+                image_data,
+                transparency
             })
         }
     }
@@ -160,4 +163,14 @@ impl Bitmap {
 
 fn is_valid_bitmap(raw_bytes: &[u8]) -> bool {
     raw_bytes.len() > 2 && raw_bytes[0] == b'B' && raw_bytes[1] == b'M'
+}
+
+/// An indicator of what color should be regarded as transparent when drawing
+/// a bitmap
+#[derive(Clone, Copy, PartialEq)]
+pub enum Transparency {
+    /// When black is encountered, don't draw it
+    Black,
+    /// Draw everything, don't exclude any color
+    None
 }

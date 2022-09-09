@@ -240,6 +240,13 @@ macro_rules! vec {
             let allocator = get_allocator();
             vec![$($e),+ ; allocator]
         }
+    };
+    (item_type => $T:ty, capacity => $e:expr) => {
+        {
+            use $crate::allocator::get_allocator;
+            let allocator = get_allocator();
+            Vec::<$T>::with_capacity($e, allocator)
+        }
     }
 }
 

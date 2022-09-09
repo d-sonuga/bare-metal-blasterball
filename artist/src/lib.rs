@@ -18,7 +18,7 @@ use num::Integer;
 pub mod font;
 pub mod bitmap;
 
-use bitmap::Bitmap;
+use bitmap::{Bitmap, Transparency};
 
 pub const SCREEN_WIDTH: usize = 320;
 pub const SCREEN_HEIGHT: usize = 200;
@@ -32,15 +32,14 @@ lazy_static! {
         vga_buffer: unsafe { &mut *(0xa0000 as *mut VGABuffer) },
         double_buffer: VGABuffer {
             pixels: [[Color(Color::Black); SCREEN_WIDTH]; SCREEN_HEIGHT]
-        },
+        },/*
         move_bitmap_in_double_buffer_request_queue: queue!(
             item_type => MoveBitmapInDoubleBufferRequest,
             capacity => 10
-        ),
-        transparency: Transparency::Black
+        )*/
     });
 }
-
+/*
 #[derive(Clone)]
 pub struct MoveBitmapInDoubleBufferRequest {
     pub old_pos: Point,
@@ -49,7 +48,7 @@ pub struct MoveBitmapInDoubleBufferRequest {
     pub bottom_repr: Bitmap,
     pub bottom_repr_pos: Point
 }
-
+*/
 unsafe impl Send for Artist {}
 
 #[macro_export]
@@ -150,23 +149,26 @@ pub struct Artist {
     color_code: ColorCode,
     vga_buffer: &'static mut VGABuffer,
     double_buffer: VGABuffer,
-    move_bitmap_in_double_buffer_request_queue: Queue<'static, MoveBitmapInDoubleBufferRequest>,
-    transparency: Transparency
+    //move_bitmap_in_double_buffer_request_queue: Queue<'static, MoveBitmapInDoubleBufferRequest>
 }
 
 impl Artist {
 
     /// Writes a byte to the VGA buffer
-    fn write_byte(&mut self, c: u8) {
+    fn write_byte(&mut self, c: u8, write_target: WriteTarget) {
         if c == b'\n' {
             self.newline();
         } else if is_printable_ascii(c) {
+            let mut buffer = match write_target {
+                WriteTarget::VGABuffer => &mut self.vga_buffer,
+                WriteTarget::DoubleBuffer => &mut self.double_buffer
+            };
             for (y, byte) in font::FONT[c].iter().enumerate() {
                 for x in 0..8 {
                     if byte & (1 << (8 - x - 1)) == 0 {
-                        self.double_buffer[self.y_pos + y][self.x_pos + x] = self.color_code.background();
+                        buffer[self.y_pos + y][self.x_pos + x] = self.color_code.background();
                     } else {
-                        self.double_buffer[self.y_pos + y][self.x_pos + x] = self.color_code.foreground();
+                        buffer[self.y_pos + y][self.x_pos + x] = self.color_code.foreground();
                     }
                 }
             }
@@ -178,32 +180,40 @@ impl Artist {
             if self.y_pos >= SCREEN_HEIGHT - 8 {
                 self.y_pos = 0;
             }
-            self.redraw_on_screen_from_double_buffer();
         } else {
-            self.write_byte(b'?');
+            self.write_byte(b'?', write_target);
         }
     }
 
-    fn write_string(&mut self, s: &str) {
+    fn write_string(&mut self, s: &str, write_target: WriteTarget) {
         for c in s.bytes() {
-            self.write_byte(c);
+            self.write_byte(c, write_target);
         }
+    }
+
+    pub fn write_string_in_double_buffer(&mut self, s: &str) {
+        self.write_string(s, WriteTarget::DoubleBuffer);
     }
 
     fn printint<T: Integer>(&mut self, n: T) {
         fn inner_printint<T: Integer>(w: &mut Artist, n: T) {
             if n.to_u8() < 10 {
-                w.write_byte(n.to_u8() + 48);
+                w.write_byte(n.to_u8() + 48, WriteTarget::VGABuffer);
             } else {
                 let n = n.to_u64();
                 let q = n / 10;
                 let r = n % 10;
                 inner_printint(w, q);
-                w.write_byte(r.to_u8() + 48u8);
+                w.write_byte(r.to_u8() + 48u8, WriteTarget::VGABuffer);
             }
         }
         inner_printint(self, n);
         self.newline();
+    }
+
+    pub fn reset_writing_pos(&mut self) {
+        self.x_pos = 0;
+        self.y_pos = 0;
     }
 
     /// Prints a newline in the VGA buffer
@@ -265,25 +275,12 @@ impl Artist {
 */
 
     pub fn draw_bitmap_in_double_buffer(&mut self, pos: Point, bitmap: &Bitmap) {
-        /*for y in 0..bitmap.height() {
-            for x in 0..bitmap.width() {
-                let pixel_array_y = bitmap.height() - y - 1;
-                if pos_is_within_screen_bounds(pos, x, y) {
-                    let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
-                    if self.transparency == Transparency::Black && color == Color::Black {
-                        continue;
-                    }
-                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = Color::new(color);
-                }
-            }
-        }
-        */
         for y in 0..bitmap.height() {
             for x in 0..bitmap.width() {
                 let pixel_array_y = bitmap.height() - y - 1;
                 if pos_is_within_screen_bounds(pos, x, y) {
                     let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
-                    if self.transparency == Transparency::Black && color == Color::Black {
+                    if bitmap.transparency == Transparency::Black && color == Color::Black {
                         continue;
                     }
                     self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = Color::new(color);
@@ -292,7 +289,7 @@ impl Artist {
         }
     }
 
-    fn move_bitmap_in_double_buffer(&mut self, old_pos: Point, new_pos: Point, bitmap: Bitmap, bottom_repr: Bitmap, bottom_repr_pos: Point) {
+    /*fn move_bitmap_in_double_buffer(&mut self, old_pos: Point, new_pos: Point, bitmap: Bitmap, bottom_repr: Bitmap, bottom_repr_pos: Point) {
         for y in 0..bitmap.height() {
             for x in 0..bitmap.width() {
                 let pixel_array_y = bitmap.height() - y - 1;
@@ -312,9 +309,9 @@ impl Artist {
                 }
             }
         }
-    }
+    }*/
 
-    pub fn redraw_region_in_double_buffer(&mut self, top_left_corner: Point, top_right_corner: Point, bottom_left_corner: Point, bottom_right_corner: Point, bitmaps_to_draw: Vec<(Point, Bitmap)>) {
+    /*pub fn redraw_region_in_double_buffer(&mut self, top_left_corner: Point, top_right_corner: Point, bottom_left_corner: Point, bottom_right_corner: Point, bitmaps_to_draw: Vec<(Point, Bitmap)>) {
         for (point, bitmap) in bitmaps_to_draw.iter() {
             for y in top_left_corner.y().to_usize()..=bottom_left_corner.y().to_usize() {
                 for x in top_left_corner.x().to_usize()..=top_right_corner.x().to_usize() {
@@ -335,13 +332,13 @@ impl Artist {
                 }
             }
         }
-    }
+    }*/
 
-    pub fn service_all_double_buffer_requests(&mut self) {
+    /*pub fn service_all_double_buffer_requests(&mut self) {
         while let Some(request) = self.move_bitmap_in_double_buffer_request_queue.dequeue() {
             self.move_bitmap_in_double_buffer(request.old_pos, request.new_pos, request.repr, request.bottom_repr, request.bottom_repr_pos);
         }
-    }
+    }*/
     
     pub fn draw_background_in_double_buffer(&mut self, background: &Bitmap) {
         // Rust was too slow for this.
@@ -358,27 +355,18 @@ impl Artist {
         }
     }
 
-    pub fn redraw_on_screen_from_double_buffer(&mut self) {
+    pub fn draw_on_screen_from_double_buffer(&mut self) {
         for y in 0..SCREEN_HEIGHT {
             for x in 0..SCREEN_WIDTH {
                 self.vga_buffer[y][x] = self.double_buffer[y][x];
             }
         }
     }
-
+    /*
     pub fn request_to_move_bitmap_in_double_buffer(&mut self, request: MoveBitmapInDoubleBufferRequest) {
         self.move_bitmap_in_double_buffer_request_queue.enqueue(request);
     }
-}
-
-/// An indicator of what color should be regarded as transparent when drawing
-/// a bitmap
-#[derive(PartialEq)]
-pub enum Transparency {
-    /// When black is encountered, don't draw it
-    Black,
-    /// Draw everything, don't exclude any color
-    None
+    */
 }
 
 pub fn wait_for_retrace() {
@@ -405,9 +393,16 @@ pub fn pos_is_within_screen_bounds(pos: Point, dx: usize, dy: usize) -> bool {
 
 impl fmt::Write for Artist {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.write_string(s);
+        self.write_string(s, WriteTarget::VGABuffer);
         Ok(())
     }
+}
+
+/// Tells the artist where to write text to
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum WriteTarget {
+    VGABuffer,
+    DoubleBuffer
 }
 
 #[cfg(test)]

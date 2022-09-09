@@ -5,6 +5,7 @@
 use core::ops::{Add, Sub, AddAssign, SubAssign};
 use num::{Integer, Float};
 
+#[derive(Clone)]
 pub struct Object {
     /// The top left point of the object on the screen
     pub pos: Point,
@@ -21,6 +22,7 @@ impl Object {
     }
 }
 
+#[derive(Clone)]
 pub struct Velocity {
     /// The angle in a circular coordinate system, assuming the center is `pos`
     pub direction: usize,
