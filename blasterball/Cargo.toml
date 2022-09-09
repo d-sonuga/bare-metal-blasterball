@@ -13,3 +13,5 @@ event_hook = { path = "../event_hook" }
 drivers = { path = "../drivers" }
 physics = { path = "../physics" }
 collections = { path = "../collections" }
+sync = { path = "../sync" }
+num = { path = "../num" }

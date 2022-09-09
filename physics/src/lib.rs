@@ -28,12 +28,15 @@ pub struct Velocity {
 }
 
 impl Velocity {
-    fn horizontal_component(&self) -> i16 {
+    #[inline]
+    pub fn horizontal_component(&self) -> i16 {
         self.speed as i16 * self.direction.cosf32().to_i16()
     }
-    fn vertical_component(&self) -> i16 {
+    #[inline]
+    pub fn vertical_component(&self) -> i16 {
         self.speed as i16 * self.direction.sinf32().to_i16()
     }
+    #[inline]
     pub fn reflect_about_y_axis(&mut self) {
         match self.direction {
             0..=180 => self.direction = 180 - self.direction,
@@ -41,18 +44,21 @@ impl Velocity {
             _ => unreachable!()
         }
     }
+    #[inline]
     pub fn reflect_about_x_axis(&mut self) {
         self.direction = 360 - self.direction;
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]
 pub struct Point(pub i16, pub i16);
 
 impl Point {
+    #[inline]
     pub fn x(&self) -> i16 {
         self.0
     }
+    #[inline]
     pub fn y(&self) -> i16 {
         self.1 as i16
     }
@@ -60,6 +66,7 @@ impl Point {
 
 impl Add for Point {
     type Output = Point;
+    #[inline]
     fn add(self, rhs: Point) -> Self::Output {
         Point(self.0 + rhs.0, self.1 + rhs.1)
     }
@@ -67,12 +74,14 @@ impl Add for Point {
 
 impl Sub for Point {
     type Output = Point;
+    #[inline]
     fn sub(self, rhs: Point) -> Self::Output {
         Point(self.0 - rhs.0, self.1 - rhs.1)
     }
 }
 
 impl AddAssign for Point {
+    #[inline]
     fn add_assign(&mut self, rhs: Point) {
         self.0 += rhs.0;
         self.1 += rhs.1;
@@ -80,6 +89,7 @@ impl AddAssign for Point {
 }
 
 impl SubAssign for Point {
+    #[inline]
     fn sub_assign(&mut self, rhs: Point) {
         self.0 -= rhs.0;
         self.1 -= rhs.1;

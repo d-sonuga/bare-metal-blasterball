@@ -9,7 +9,9 @@ use lazy_static::lazy_static;
 use sync::mutex::Mutex;
 use physics::{Rectangle, Point};
 use collections::vec::Vec;
+use collections::queue::Queue;
 use collections::vec;
+use collections::queue;
 use machine::port::Port;
 use num::Integer;
 
@@ -20,18 +22,35 @@ use bitmap::Bitmap;
 
 pub const SCREEN_WIDTH: usize = 320;
 pub const SCREEN_HEIGHT: usize = 200;
+pub const DOUBLE_BUFFER_SIZE: usize = SCREEN_HEIGHT * SCREEN_WIDTH;
 
 lazy_static! {
-    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
+    pub static ref ARTIST: Mutex<Artist> = Mutex::new(Artist {
         x_pos: 0,
         y_pos: 0,
         color_code: ColorCode(Color(Color::Yellow), Color(Color::Black)),
         vga_buffer: unsafe { &mut *(0xa0000 as *mut VGABuffer) },
         double_buffer: VGABuffer {
             pixels: [[Color(Color::Black); SCREEN_WIDTH]; SCREEN_HEIGHT]
-        }
+        },
+        move_bitmap_in_double_buffer_request_queue: queue!(
+            item_type => MoveBitmapInDoubleBufferRequest,
+            capacity => 10
+        ),
+        transparency: Transparency::Black
     });
 }
+
+#[derive(Clone)]
+pub struct MoveBitmapInDoubleBufferRequest {
+    pub old_pos: Point,
+    pub new_pos: Point,
+    pub repr: Bitmap,
+    pub bottom_repr: Bitmap,
+    pub bottom_repr_pos: Point
+}
+
+unsafe impl Send for Artist {}
 
 #[macro_export]
 macro_rules! println {
@@ -47,18 +66,18 @@ macro_rules! print {
 pub fn _print(args: fmt::Arguments) {
     use machine::instructions::interrupts;
     interrupts::without_interrupts(||{
-        WRITER.lock().write_fmt(args).unwrap();
+        ARTIST.lock().write_fmt(args).unwrap();
     })
 }
 
-pub fn get_artist() -> &'static Mutex<Writer> {
-    &WRITER
+pub fn get_artist() -> &'static Mutex<Artist> {
+    &ARTIST
 }
 
 pub fn clear_screen() {
     use machine::instructions::interrupts;
     interrupts::without_interrupts(||{
-        WRITER.lock().clear_screen();
+        ARTIST.lock().clear_screen();
     });
 }
 
@@ -124,16 +143,18 @@ impl IndexMut<usize> for VGABuffer {
     }
 }
 
-/// Writes to the VGA buffer
-pub struct Writer {
+/// Draws to the VGA buffer
+pub struct Artist {
     x_pos: usize,
     y_pos: usize,
     color_code: ColorCode,
     vga_buffer: &'static mut VGABuffer,
-    double_buffer: VGABuffer
+    double_buffer: VGABuffer,
+    move_bitmap_in_double_buffer_request_queue: Queue<'static, MoveBitmapInDoubleBufferRequest>,
+    transparency: Transparency
 }
 
-impl Writer {
+impl Artist {
 
     /// Writes a byte to the VGA buffer
     fn write_byte(&mut self, c: u8) {
@@ -143,9 +164,9 @@ impl Writer {
             for (y, byte) in font::FONT[c].iter().enumerate() {
                 for x in 0..8 {
                     if byte & (1 << (8 - x - 1)) == 0 {
-                        self.vga_buffer[self.y_pos + y][self.x_pos + x] = self.color_code.background();
+                        self.double_buffer[self.y_pos + y][self.x_pos + x] = self.color_code.background();
                     } else {
-                        self.vga_buffer[self.y_pos + y][self.x_pos + x] = self.color_code.foreground();
+                        self.double_buffer[self.y_pos + y][self.x_pos + x] = self.color_code.foreground();
                     }
                 }
             }
@@ -157,6 +178,7 @@ impl Writer {
             if self.y_pos >= SCREEN_HEIGHT - 8 {
                 self.y_pos = 0;
             }
+            self.redraw_on_screen_from_double_buffer();
         } else {
             self.write_byte(b'?');
         }
@@ -169,7 +191,7 @@ impl Writer {
     }
 
     fn printint<T: Integer>(&mut self, n: T) {
-        fn inner_printint<T: Integer>(w: &mut Writer, n: T) {
+        fn inner_printint<T: Integer>(w: &mut Artist, n: T) {
             if n.to_u8() < 10 {
                 w.write_byte(n.to_u8() + 48);
             } else {
@@ -242,29 +264,42 @@ impl Writer {
     }
 */
 
-    pub fn draw_bitmap(&mut self, pos: Point, bitmap: &Bitmap) {
+    pub fn draw_bitmap_in_double_buffer(&mut self, pos: Point, bitmap: &Bitmap) {
+        /*for y in 0..bitmap.height() {
+            for x in 0..bitmap.width() {
+                let pixel_array_y = bitmap.height() - y - 1;
+                if pos_is_within_screen_bounds(pos, x, y) {
+                    let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
+                    if self.transparency == Transparency::Black && color == Color::Black {
+                        continue;
+                    }
+                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = Color::new(color);
+                }
+            }
+        }
+        */
         for y in 0..bitmap.height() {
             for x in 0..bitmap.width() {
                 let pixel_array_y = bitmap.height() - y - 1;
                 if pos_is_within_screen_bounds(pos, x, y) {
-                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = 
-                        Color::new(bitmap.image_data[pixel_array_y*bitmap.width()+x]);
+                    let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
+                    if self.transparency == Transparency::Black && color == Color::Black {
+                        continue;
+                    }
+                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = Color::new(color);
                 }
-            }
-        }
-        for y in 0..SCREEN_HEIGHT {
-            for x in 0..SCREEN_HEIGHT {
-                self.vga_buffer[y][x] = self.double_buffer[y][x];
             }
         }
     }
 
-    pub fn move_bitmap(&mut self, old_pos: Point, new_pos: Point, bitmap: &Bitmap) {
+    fn move_bitmap_in_double_buffer(&mut self, old_pos: Point, new_pos: Point, bitmap: Bitmap, bottom_repr: Bitmap, bottom_repr_pos: Point) {
         for y in 0..bitmap.height() {
             for x in 0..bitmap.width() {
                 let pixel_array_y = bitmap.height() - y - 1;
+                let bottom_repr_array_y = bottom_repr.height() - y - 1;
                 if pos_is_within_screen_bounds(old_pos, x, y) {
-                    self.double_buffer[old_pos.y().to_usize() + y][old_pos.x().to_usize() + x] = Color(Color::Black);
+                    self.double_buffer[old_pos.y().to_usize() + y][old_pos.x().to_usize() + x] =
+                        Color::new(bottom_repr.image_data[(bottom_repr_array_y)*bottom_repr.width()+x]);
                 }
             }
         }
@@ -273,16 +308,77 @@ impl Writer {
                 let pixel_array_y = bitmap.height() - y - 1;
                 if pos_is_within_screen_bounds(new_pos, x, y) {
                     self.double_buffer[new_pos.y().to_usize() + y][new_pos.x().to_usize() + x] = 
-                        Color::new(bitmap.image_data[pixel_array_y*bitmap.height()+x]);
+                        Color::new(bitmap.image_data[pixel_array_y*bitmap.width()+x]);
                 }
             }
         }
+    }
+
+    pub fn redraw_region_in_double_buffer(&mut self, top_left_corner: Point, top_right_corner: Point, bottom_left_corner: Point, bottom_right_corner: Point, bitmaps_to_draw: Vec<(Point, Bitmap)>) {
+        for (point, bitmap) in bitmaps_to_draw.iter() {
+            for y in top_left_corner.y().to_usize()..=bottom_left_corner.y().to_usize() {
+                for x in top_left_corner.x().to_usize()..=top_right_corner.x().to_usize() {
+                    if pos_is_within_screen_bounds(Point(x.to_i16(), y.to_i16()), 0, 0) {
+                        // If the current point being drawn falls within the current bitmap's
+                        // range, draw the bitmap, else continue
+                        if x >= point.x().to_usize() && x < point.x().to_usize() + bitmap.width()
+                            && y >= point.y().to_usize() && y < point.y().to_usize() + bitmap.height() {
+                                let (bitmap_x, bitmap_y) = (x - point.x().to_usize(), y - point.y().to_usize());
+                                let pixel_array_y = bitmap.height() - bitmap_y - 1;
+                                let color = bitmap.image_data[pixel_array_y*bitmap.width()+bitmap_x];
+                                if self.transparency == Transparency::Black && color == Color::Black {
+                                    continue;
+                                }
+                                self.double_buffer[y][x] = Color::new(color);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn service_all_double_buffer_requests(&mut self) {
+        while let Some(request) = self.move_bitmap_in_double_buffer_request_queue.dequeue() {
+            self.move_bitmap_in_double_buffer(request.old_pos, request.new_pos, request.repr, request.bottom_repr, request.bottom_repr_pos);
+        }
+    }
+    
+    pub fn draw_background_in_double_buffer(&mut self, background: &Bitmap) {
+        // Rust was too slow for this.
+        // Had to use assembly
+        use core::arch::asm;
+        unsafe {
+            asm!("
+                # Move 4 bytes at a time from esi to edi, ecx times
+                rep movsd",
+                in("esi") background.image_data.as_ptr(),
+                in("edi") self.double_buffer.pixels.as_slice().as_ptr(),
+                in("ecx") DOUBLE_BUFFER_SIZE / 4
+            );
+        }
+    }
+
+    pub fn redraw_on_screen_from_double_buffer(&mut self) {
         for y in 0..SCREEN_HEIGHT {
             for x in 0..SCREEN_WIDTH {
                 self.vga_buffer[y][x] = self.double_buffer[y][x];
             }
         }
     }
+
+    pub fn request_to_move_bitmap_in_double_buffer(&mut self, request: MoveBitmapInDoubleBufferRequest) {
+        self.move_bitmap_in_double_buffer_request_queue.enqueue(request);
+    }
+}
+
+/// An indicator of what color should be regarded as transparent when drawing
+/// a bitmap
+#[derive(PartialEq)]
+pub enum Transparency {
+    /// When black is encountered, don't draw it
+    Black,
+    /// Draw everything, don't exclude any color
+    None
 }
 
 pub fn wait_for_retrace() {
@@ -300,13 +396,14 @@ pub fn is_printable_ascii(c: u8) -> bool {
     }
 }
 
+#[inline]
 pub fn pos_is_within_screen_bounds(pos: Point, dx: usize, dy: usize) -> bool {
     pos.y() >= 0 && pos.x() >= 0 
-        && pos.y().to_usize() + dy < 200
-        && pos.x().to_usize() + dx < 320
+        && pos.y().to_usize() + dy < SCREEN_HEIGHT
+        && pos.x().to_usize() + dx < SCREEN_WIDTH
 }
 
-impl fmt::Write for Writer {
+impl fmt::Write for Artist {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(s);
         Ok(())
@@ -346,5 +443,9 @@ mod tests {
         let pos = Point(100, 201);
         let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
         assert!(!is_within_bounds);
+
+        let pos = Point(319, 199);
+        let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
+        assert!(is_within_bounds);
     }
 }

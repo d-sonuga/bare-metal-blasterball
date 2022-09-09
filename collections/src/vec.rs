@@ -233,6 +233,13 @@ macro_rules! vec {
             let allocator = get_allocator();
             $crate::vec![$e ; $n ; allocator]
         }
+    };
+    ($($e:expr),+) => {
+        {
+            use $crate::allocator::get_allocator;
+            let allocator = get_allocator();
+            vec![$($e),+ ; allocator]
+        }
     }
 }
 

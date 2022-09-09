@@ -23,7 +23,9 @@ dependencies = [
  "drivers",
  "event_hook",
  "machine",
+ "num",
  "physics",
+ "sync",
  "tester",
 ]
 

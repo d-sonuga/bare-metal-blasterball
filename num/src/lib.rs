@@ -101,6 +101,8 @@ pub trait Integer: NumOps + PartialEq + PartialOrd + Sized {
 
     fn to_u8(&self) -> u8;
 
+    fn to_i16(&self) -> i16;
+
     fn to_u64(&self) -> u64;
 
     fn to_u128(&self) -> u128;
@@ -213,6 +215,10 @@ macro_rules! impl_int {
                 *self as u8
             }
 
+            fn to_i16(&self) -> i16 {
+                *self as i16
+            }
+
             fn to_u64(&self) -> u64 {
                 *self as u64
             }
@@ -225,6 +231,7 @@ macro_rules! impl_int {
                 *self as f32
             }
 
+            #[inline]
             fn to_usize(&self) -> usize {
                 *self as usize
             }

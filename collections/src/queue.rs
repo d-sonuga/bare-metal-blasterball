@@ -48,14 +48,16 @@ impl<'a, T: Clone> Queue<'a, T> {
     
     /// Places an item at the back of the queue
     ///
-    /// To enqueue an item, there are a few case involved
+    /// # Complexity
+    /// Takes O(1) amortized time
     ///
-    /// # Cases
-    /// 1. The queue is empty front_ptr == back_ptr (just initialized).
-    /// 2. The queue is not emtpy, but the back_ptr is at self.start_ptr + self.capacity
-    /// 3. The queue is full and all items in the queue are in order from start_ptr to start_ptr + len
-    /// 4. The queue is full and all items are in order from front_ptr to self.len, then from start_ptr
-    ///     to back_ptr.
+    /// On a regular day, while there is still enough capacity, this will take O(1) time.
+    /// But when the capacity is filled, all the items are copied into a newly allocated location
+    /// with 2x the size, which will take O(n) time, where n == the number of items in the queue
+    ///
+    /// # Panics
+    /// This function panics in the event where more memory is needed for the queue
+    /// but the allocator fails to provide it
     pub fn enqueue(&mut self, item: T) {
         if self.len >= self.capacity {
             let new_size = self.capacity * 2;
@@ -95,6 +97,10 @@ impl<'a, T: Clone> Queue<'a, T> {
         self.len += 1;
     }
 
+    /// Removes and returns the item at the front of the queue, if there is any
+    ///
+    /// # Complexity
+    /// Takes O(1) time, since it's just removing an item and updating pointers
     pub fn dequeue(&mut self) -> Option<T> {
         if self.len == 0 {
             None
@@ -133,6 +139,23 @@ impl<'a, T: Clone> Drop for Queue<'a, T> {
             ptr::drop_in_place(ptr::slice_from_raw_parts_mut(self.start_ptr, self.len));
             self.allocator.dealloc(self.start_ptr as *mut u8, self.capacity).unwrap()
         };
+    }
+}
+
+#[macro_export]
+macro_rules! queue {
+    (item_type => $T:ty, capacity => $e:expr, allocator => $allocator:expr) => {
+        {
+            let queue: Queue<$T> = Queue::with_capacity($e, $allocator);
+            queue
+        }
+    };
+    (item_type => $T:ty, capacity => $e:expr) => {
+        {
+            use $crate::allocator::get_allocator;
+            let allocator = get_allocator();
+            queue!(item_type => $T, capacity => $e, allocator => allocator)
+        }
     }
 }
 
@@ -259,6 +282,16 @@ mod tests {
         queue.enqueue(SomeValues { x: 32, y: 54_444, z: 889_987_233_554 });
         queue.enqueue(SomeValues { x: 890, y: 5_343, z: 335_232 });
         assert_eq!(queue.len(), 2);
+    }
+
+    #[test]
+    fn test_macro() {
+        let allocator = &AlwaysSuccessfulAllocator;
+        let mut queue = crate::queue!(item_type => u8, capacity => 10, allocator => allocator);
+        assert_eq!(queue.len(), 0);
+        assert_eq!(queue.capacity(), 10);
+        queue.enqueue(56);
+        assert_eq!(queue.dequeue(), Some(56));
     }
 
     struct AlwaysSuccessfulAllocator;

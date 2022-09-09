@@ -15,6 +15,7 @@ const COLOR_TABLE_SIZE: usize = 254;
 /// I used arrays of u8s instead of the corresponding u32 or u16 in all the related
 /// bitmap structures because integer values in the bitmap structure are stored in
 /// little-endian format
+#[derive(Clone, Copy)]
 pub struct Bitmap {
     /// The start of the file used for identification
     file_header: &'static BitmapFileHeader,
@@ -145,11 +146,13 @@ impl Bitmap {
     }
 
     /// Returns the width of the image in the bitmap
+    #[inline]
     pub fn width(&self) -> usize {
         u32::from_le_bytes(self.dib_header.image_width) as usize
     }
 
     /// Returns the height of the image in the bitmap
+    #[inline]
     pub fn height(&self) -> usize {
         u32::from_le_bytes(self.dib_header.image_height) as usize
     }
