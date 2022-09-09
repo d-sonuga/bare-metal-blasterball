@@ -40,6 +40,7 @@ objcopy -O binary bootloader bmb_bin
  
 qemu-system-x86_64 -drive file=bmb_bin,format=raw
 
+
 else
 echo "Failed to build the bootloader"
 fi

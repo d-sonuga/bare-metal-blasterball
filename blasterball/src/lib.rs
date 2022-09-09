@@ -19,29 +19,35 @@ use artist;
 
 #[no_mangle]
 pub extern "C" fn game_entry_point() -> ! {
-    //event_hook::unhook_all_events(EventKind::Keyboard);
-    let mut game = Game::init();
-    game.main_loop();
-    core::mem::drop(game);
-    event_hook::hook_event(EventKind::Keyboard, box_fn!(|event| {
-        if let Event::Keyboard(keycode, direction, modifiers) = event {
-            match keycode {
-                KeyCode::Y => {
-                    game_entry_point();
+    loop {
+        let mut game = Game::init();
+        game.main_loop();
+        core::mem::drop(game);
+        let mut restart = false;
+        let restart_exit_hook = event_hook::hook_event(EventKind::Keyboard, box_fn!(|event| {
+            if let Event::Keyboard(keycode, direction, modifiers) = event {
+                match keycode {
+                    KeyCode::Y => {
+                        restart = true;
+                    }
+                    KeyCode::Escape => println!("exited"),
+                    _ => ()
                 }
-                KeyCode::Escape => println!("exited"),
-                _ => ()
+            }
+        }));
+        loop {
+            if restart {
+                event_hook::unhook_event(restart_exit_hook, EventKind::Keyboard);
+                break;
             }
         }
-    }));
-    loop {}
+    }
 }
 
 struct Game {
     ball_char: Character,
     paddle_char: Character,
     has_started: bool,
-    artist: MutexGuard<'static, Artist>,
     background: Bitmap,
     blocks: Vec<'static, Character>
 }
@@ -71,7 +77,6 @@ impl Game {
             ball_char,
             paddle_char,
             has_started: false,
-            artist: artist::get_artist().lock(),
             background: background_bmp,
             blocks: Self::generate_blocks()
         }
@@ -106,12 +111,13 @@ impl Game {
                 };
             }
         }));
+        let mut artist = artist::get_artist().lock();
         loop {
             if self.blocks.len() == 0 {
-                self.artist.write_str("You win\n");
-                self.artist.write_str("Press y to play again\n");
-                self.artist.write_str("Press esc to exit");
-                self.artist.reset_writing_pos();
+                artist.write_str("You win\n");
+                artist.write_str("Press y to play again\n");
+                artist.write_str("Press esc to exit");
+                artist.reset_writing_pos();
                 break;
             }
             if ball_collided_with_left_wall(&self.ball_char) {
@@ -124,8 +130,9 @@ impl Game {
                 self.ball_char.object.velocity.reflect_about_x_axis();
             } else if ball_is_off_screen(&self.ball_char) {
                 use core::fmt::Write;
-                self.artist.write_str("Game over\n");
-                self.artist.write_str("Press y to play again, any other key to exit");
+                artist.write_str("Game over\n");
+                artist.write_str("Press y to play again\n");
+                artist.write_str("Press esc to exit");
                 break;
             }
             for (i, block_char) in self.blocks.iter().enumerate() {
@@ -140,18 +147,19 @@ impl Game {
             if ball_passed_through_paddle {
                 self.ball_char.object.pos = point_at_paddle_level_opt.unwrap();
             }
-            self.artist.draw_background_in_double_buffer(&self.background);
-            self.artist.draw_bitmap_in_double_buffer(self.paddle_char.object.pos, &self.paddle_char.repr);
+            artist.draw_background_in_double_buffer(&self.background);
+            artist.draw_bitmap_in_double_buffer(self.paddle_char.object.pos, &self.paddle_char.repr);
             for block_char in self.blocks.iter() {
-                self.artist.draw_bitmap_in_double_buffer(block_char.object.pos, &block_char.repr);
+                artist.draw_bitmap_in_double_buffer(block_char.object.pos, &block_char.repr);
             }
-            self.artist.draw_bitmap_in_double_buffer(self.ball_char.object.pos, &self.ball_char.repr);
+            artist.draw_bitmap_in_double_buffer(self.ball_char.object.pos, &self.ball_char.repr);
             if !self.has_started {
-                self.artist.write_string_in_double_buffer("Press enter to start");
-                self.artist.reset_writing_pos();
+                artist.write_string_in_double_buffer("Press enter to start");
+                artist.reset_writing_pos();
             }
-            self.artist.draw_on_screen_from_double_buffer();
+            artist.draw_on_screen_from_double_buffer();
         }
+        core::mem::drop(artist);
         event_hook::unhook_event(game_hook, EventKind::Keyboard).unwrap();
     }
 
@@ -163,17 +171,6 @@ impl Game {
         let old_pos = self.paddle_char.object.pos;
         self.paddle_char.object.pos += diff;
     }
-
-    /*fn restart(&mut self) {
-        self.paddle_char.object.pos = 
-                Point(160 - (paddle_bmp.width() / 2) as i16 - 8, 200 - 8 - paddle_bmp.height() as i16);
-        self.paddle_char.object.velocity = Velocity { direction: 0, speed: 0 };
-        self.ball_char.object.pos =
-                pos: paddle_char.object.pos - Point(0, 14) + Point(18, 0);
-        self.ball_char.object.velocity = Velocity { direction: 0, speed: 0 };
-        self.blocks = Self::generate_blocks();
-        self.main_loop();
-    }*/
 
     fn generate_blocks() -> Vec<'static, Character> {
         let blue_block_bmp_bytes = include_bytes!("./assets/blue_block.bmp");

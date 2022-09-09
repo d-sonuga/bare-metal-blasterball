@@ -170,7 +170,7 @@ impl<'a> EventHooker<'a> {
     /// let mut x = 1;
     /// event_hooker.hook_event(EventKind::Timer, BoxedFn::new(|_| x += 1, &AlwaysSuccessfulAllocator));
     /// event_hooker.send_event(Event::Timer);
-    /// //assert_eq!(x, 2);
+    /// assert_eq!(x, 2);
     /// ```
     pub fn send_event(&self, event: Event) {
         let event_kind = EventKind::from_event(event);
@@ -210,7 +210,8 @@ impl<'a> EventHooker<'a> {
     /// }
     ///
     /// let mut event_hooker = EventHooker::new(&AlwaysSuccessfulAllocator);
-    /// let idx = event_hooker.hook_event(EventKind::Timer, BoxedFn::new(|_| (), &AlwaysSuccessfulAllocator));
+    /// let mut x = 1;
+    /// let idx = event_hooker.hook_event(EventKind::Timer, BoxedFn::new(|_| x += 1, &AlwaysSuccessfulAllocator));
     /// let unhook_result = event_hooker.unhook_event(idx, EventKind::Timer);
     /// assert_eq!(unhook_result, Ok(()));
     /// let unhook_result = event_hooker.unhook_event(idx, EventKind::Timer);
@@ -290,7 +291,7 @@ impl<'a> IndexMut<EventKind> for EventHooker<'a> {
 }
 
 /// A unique function in an vector associated with a particular event
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Handler<'a> {
     /// A unique number in the vector associated with the handler.
     /// Used to identify the handler when removing handlers

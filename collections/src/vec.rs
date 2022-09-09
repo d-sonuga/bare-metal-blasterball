@@ -96,11 +96,11 @@ impl<'a, T: Clone> Vec<'a, T> {
         if idx >= self.len {
             panic!("Invalid index");
         }
-        let value = unsafe { (self.start_ptr.offset(idx as isize).read()).clone() };
+        let value = unsafe { self.start_ptr.offset(idx as isize).read() };
         for i in idx + 1..self.len {
             let i = i as isize;
             unsafe {
-                let val = (self.start_ptr.offset(i).read()).clone();
+                let val = self.start_ptr.offset(i).read();
                 self.start_ptr.offset(i - 1).write(val);
             }
         }
