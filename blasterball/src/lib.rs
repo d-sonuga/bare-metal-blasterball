@@ -2,8 +2,9 @@
 #![no_std]
 
 use core::panic::PanicInfo;
-use machine::memory::MemMap;
 use core::fmt::Write;
+use machine::memory::MemMap;
+use machine;
 use event_hook;
 use event_hook::{EventKind, Event, box_fn};
 use drivers::keyboard::{KeyCode, KeyDirection, KeyModifiers};
@@ -30,7 +31,11 @@ pub extern "C" fn game_entry_point() -> ! {
                     KeyCode::Y => {
                         restart = true;
                     }
-                    KeyCode::Escape => println!("exited"),
+                    KeyCode::Escape => {
+                        if unsafe { machine::power::shutdown() }.is_err() {
+                            println!("Shutdown your computer yourself");
+                        }
+                    }
                     _ => ()
                 }
             }

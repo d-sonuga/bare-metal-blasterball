@@ -1,6 +1,6 @@
 //! Abstractions for working with the 8259 Intel Programmable Interrupt Controllers
 
-use crate::port::Port;
+use crate::port::{Port, PortReadWrite};
 
 /// Command issued at the end of an interrupt routine
 const END_OF_INTERRUPT: u8 = 0x20;
@@ -26,9 +26,9 @@ struct Pic {
     /// The base index in the IDT that the PIC's interrupts are masked to
     offset: u8,
     /// PIC's command port
-    command: Port,
+    command: Port<u8>,
     /// PIC's data port, for accessing the interrupt mask
-    data: Port
+    data: Port<u8>
 }
 
 /// The master and slave PICs
@@ -43,13 +43,13 @@ impl Pics {
     pub const fn new(master_offset: u8, slave_offset: u8) -> Pics {
         let master = Pic {
             offset: master_offset,
-            command: Port::new(MASTER_PIC_COMMAND_PORT),
-            data: Port::new(MASTER_PIC_DATA_PORT)
+            command: Port::<u8>::new(MASTER_PIC_COMMAND_PORT),
+            data: Port::<u8>::new(MASTER_PIC_DATA_PORT)
         };
         let slave = Pic {
             offset: slave_offset,
-            command: Port::new(SLAVE_PIC_COMMAND_PORT),
-            data: Port::new(SLAVE_PIC_DATA_PORT)
+            command: Port::<u8>::new(SLAVE_PIC_COMMAND_PORT),
+            data: Port::<u8>::new(SLAVE_PIC_DATA_PORT)
         };
         Pics {
             master,
@@ -73,7 +73,7 @@ impl Pics {
         let original_masks = self.read_masks();
          
         
-        let mut wait_port: Port = Port::new(WAIT_PORT);
+        let mut wait_port: Port<u8> = Port::new(WAIT_PORT);
         let mut wait = || wait_port.write(0);
 
         // Start the initialization sequence by sending

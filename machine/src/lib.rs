@@ -1,7 +1,7 @@
 //! Abstractions for dealing with the x86_64 machine
 
 #![no_std]
-#![feature(abi_x86_interrupt)]
+#![feature(abi_x86_interrupt, array_windows)]
 
 pub mod interrupts;
 pub mod memory;
@@ -11,6 +11,7 @@ pub mod port;
 pub mod pic8259;
 pub mod instructions;
 pub mod registers;
+pub mod power;
 
 use memory::Addr;
 

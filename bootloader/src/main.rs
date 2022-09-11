@@ -1,6 +1,7 @@
 #![no_main]
 #![no_std]
 #![feature(abi_x86_interrupt)]
+#![allow(unaligned_references)]
 
 use core::arch::{global_asm, asm};
 use core;
@@ -122,7 +123,6 @@ pub extern "C" fn main() -> ! {
     interrupts::init();
     use collections::allocator;
     allocator::init(heap_mem);
-    
     unsafe {
         asm!(
     //        "mov rsp, {}

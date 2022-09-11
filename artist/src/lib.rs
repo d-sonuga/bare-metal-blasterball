@@ -369,6 +369,7 @@ impl Artist {
     */
 }
 
+/*
 pub fn wait_for_retrace() {
     const INPUT_STATUS: u16 = 0x03da;
     const VRETRACE: u8 = 0x08;
@@ -376,6 +377,7 @@ pub fn wait_for_retrace() {
     while input_status_port.read() & VRETRACE != 0 {}
     while input_status_port.read() & VRETRACE == 0 {}
 }
+*/
 
 pub fn is_printable_ascii(c: u8) -> bool {
     match c {

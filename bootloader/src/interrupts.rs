@@ -78,8 +78,8 @@ extern "x86-interrupt" fn timer_interrupt_handler(sf: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
-    use machine::port::Port;
-    let port = Port::new(0x60);
+    use machine::port::{Port, PortReadWrite};
+    let port: Port<u8> = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
     let mut keyboard = KEYBOARD.lock();
     if let Ok(Some(event)) = keyboard.process_byte(scancode) {
