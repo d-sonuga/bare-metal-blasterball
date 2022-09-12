@@ -1,6 +1,7 @@
 //! Abstractions for working with the 8259 Intel Programmable Interrupt Controllers
 
 use crate::port::{Port, PortReadWrite};
+use crate::port::consts::WAIT_PORT_NO;
 
 /// Command issued at the end of an interrupt routine
 const END_OF_INTERRUPT: u8 = 0x20;
@@ -8,14 +9,11 @@ const END_OF_INTERRUPT: u8 = 0x20;
 /// Command to initialise a PIC
 const CMD_INIT: u8 = 0x11;
 
-/// The master and slave PICs port numbers
-const MASTER_PIC_COMMAND_PORT: u16 = 0x20;
-const MASTER_PIC_DATA_PORT: u16 = 0x21;
-const SLAVE_PIC_COMMAND_PORT: u16 = 0xa0;
-const SLAVE_PIC_DATA_PORT: u16 = 0xa1;
-
-/// A port used to put garbage for waiting
-const WAIT_PORT: u16 = 0x80;
+/// The primary and secondary PICs port numbers
+const PRIMARY_PIC_COMMAND_PORT: u16 = 0x20;
+const PRIMARY_PIC_DATA_PORT: u16 = 0x21;
+const SECONDARY_PIC_COMMAND_PORT: u16 = 0xa0;
+const SECONDARY_PIC_DATA_PORT: u16 = 0xa1;
 
 /// The mode the PICs will run in
 const MODE_8086: u8 = 0x01;
@@ -31,39 +29,39 @@ struct Pic {
     data: Port<u8>
 }
 
-/// The master and slave PICs
+/// The primary and secondary PICs
 pub struct Pics {
-    master: Pic,
-    slave: Pic
+    primary: Pic,
+    secondary: Pic
 }
 
 impl Pics {
 
-    /// Creates a new instance of the master and slave PICs
-    pub const fn new(master_offset: u8, slave_offset: u8) -> Pics {
-        let master = Pic {
-            offset: master_offset,
-            command: Port::<u8>::new(MASTER_PIC_COMMAND_PORT),
-            data: Port::<u8>::new(MASTER_PIC_DATA_PORT)
+    /// Creates a new instance of the primary and secondary PICs
+    pub const fn new(primary_offset: u8, secondary_offset: u8) -> Pics {
+        let primary = Pic {
+            offset: primary_offset,
+            command: Port::<u8>::new(PRIMARY_PIC_COMMAND_PORT),
+            data: Port::<u8>::new(PRIMARY_PIC_DATA_PORT)
         };
-        let slave = Pic {
-            offset: slave_offset,
-            command: Port::<u8>::new(SLAVE_PIC_COMMAND_PORT),
-            data: Port::<u8>::new(SLAVE_PIC_DATA_PORT)
+        let secondary = Pic {
+            offset: secondary_offset,
+            command: Port::<u8>::new(SECONDARY_PIC_COMMAND_PORT),
+            data: Port::<u8>::new(SECONDARY_PIC_DATA_PORT)
         };
         Pics {
-            master,
-            slave
+            primary,
+            secondary
         }
     }
 
     /// Signifies the end of an interrupt routine to the PIC chips
     pub fn end_of_interrupt(&mut self, irq: u8) {
-        if handles_interrupt(irq, self.master) {
-            self.master.command.write(END_OF_INTERRUPT);
-        } else if handles_interrupt(irq, self.slave) {
-            self.slave.command.write(END_OF_INTERRUPT);
-            self.master.command.write(END_OF_INTERRUPT);
+        if handles_interrupt(irq, self.primary) {
+            self.primary.command.write(END_OF_INTERRUPT);
+        } else if handles_interrupt(irq, self.secondary) {
+            self.secondary.command.write(END_OF_INTERRUPT);
+            self.primary.command.write(END_OF_INTERRUPT);
         }
     }
     
@@ -73,33 +71,33 @@ impl Pics {
         let original_masks = self.read_masks();
          
         
-        let mut wait_port: Port<u8> = Port::new(WAIT_PORT);
+        let mut wait_port: Port<u8> = Port::new(WAIT_PORT_NO);
         let mut wait = || wait_port.write(0);
 
         // Start the initialization sequence by sending
-        self.master.command.write(CMD_INIT);
+        self.primary.command.write(CMD_INIT);
         wait();
-        self.slave.command.write(CMD_INIT);
+        self.secondary.command.write(CMD_INIT);
         wait();
         
         // Setup base offsets
-        self.master.data.write(self.master.offset);
+        self.primary.data.write(self.primary.offset);
         wait();
-        self.slave.data.write(self.slave.offset);
-        wait();
-
-        // Tell master that there is a slave PIC at IRQ 2
-        self.master.data.write(4);
+        self.secondary.data.write(self.secondary.offset);
         wait();
 
-        // Tell the slave PIC it's cascade identity
-        self.slave.data.write(2);
+        // Tell primary that there is a secondary PIC at IRQ 2
+        self.primary.data.write(4);
+        wait();
+
+        // Tell the secondary PIC it's cascade identity
+        self.secondary.data.write(2);
         wait();
 
         // Set the mode
-        self.master.data.write(MODE_8086);
+        self.primary.data.write(MODE_8086);
         wait();
-        self.slave.data.write(MODE_8086);
+        self.secondary.data.write(MODE_8086);
         wait();
 
         // Restore the masks
@@ -108,13 +106,13 @@ impl Pics {
 
     /// Reads the interrupt masks of the PICs
     pub fn read_masks(&self) -> (u8, u8) {
-        (self.master.data.read(), self.slave.data.read())
+        (self.primary.data.read(), self.secondary.data.read())
     }
     
     /// Writes the PICs' interrupt masks
-    pub fn write_masks(&mut self, master_mask: u8, slave_mask: u8) {
-        self.master.data.write(master_mask);
-        self.slave.data.write(slave_mask);
+    pub fn write_masks(&mut self, primary_mask: u8, secondary_mask: u8) {
+        self.primary.data.write(primary_mask);
+        self.secondary.data.write(secondary_mask);
     }
 }
 

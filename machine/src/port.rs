@@ -57,3 +57,9 @@ impl PortReadWrite for Port<u16> {
         }
     }
 }
+
+/// Port related constants
+pub mod consts {
+    /// A port to which garabage data can be written for the purpose of waiting
+    pub const WAIT_PORT_NO: u16 = 0x80;
+}

@@ -4,6 +4,7 @@
 use core::panic::PanicInfo;
 use core::fmt::Write;
 use machine::memory::MemMap;
+use machine::cmos;
 use machine;
 use event_hook;
 use event_hook::{EventKind, Event, box_fn};
@@ -53,6 +54,8 @@ struct Game {
     ball_char: Character,
     paddle_char: Character,
     has_started: bool,
+    paused: bool,
+    shutdown_attempted: bool,
     background: Bitmap,
     blocks: Vec<'static, Character>
 }
@@ -82,6 +85,8 @@ impl Game {
             ball_char,
             paddle_char,
             has_started: false,
+            paused: false,
+            shutdown_attempted: false,
             background: background_bmp,
             blocks: Self::generate_blocks()
         }
@@ -107,9 +112,21 @@ impl Game {
                     }
                     KeyCode::Enter => {
                         if !self.has_started {
-                            self.ball_char.object.velocity.direction = 210;
+                            self.ball_char.object.velocity.direction = self.generate_direction();
                             self.ball_char.object.velocity.speed = 5;
                             self.has_started = true;
+                        } else if self.paused {
+                            self.paused = false;
+                        }
+                    }
+                    KeyCode::Escape => {
+                        self.paused = true;
+                    }
+                    KeyCode::X => {
+                        if self.paused {
+                            if unsafe { machine::power::shutdown() }.is_err() {
+                                self.shutdown_attempted = true;
+                            }
                         }
                     }
                     _ => ()
@@ -118,6 +135,13 @@ impl Game {
         }));
         let mut artist = artist::get_artist().lock();
         loop {
+            if self.paused {
+                artist.write_str("Paused\n");
+                artist.write_str("Press enter to continue\n");
+                artist.write_str("Press x to exit");
+                artist.reset_writing_pos();
+                continue;
+            }
             if self.blocks.len() == 0 {
                 artist.write_str("You win\n");
                 artist.write_str("Press y to play again\n");
@@ -211,6 +235,26 @@ impl Game {
             }
         }
         blocks
+    }
+
+    /// Returns an angle in degrees that can be used for an initial angle
+    /// for the ball movement in the game
+    fn generate_direction(&self) -> usize {
+        // The current time is random enough for this purpose
+        let time = cmos::get_current_time();
+        // Adding 180 because the initial direction can't be anything
+        // lesser than 180.
+        // Anything lesser than 180 will result in the ball moving downwards
+        let direction = (time.sum_of_fields() % 180) + 180;
+        // A direction of 180 will result in weird movements to the left only
+        if direction == 180 {
+            direction + 10
+        // A direction of 270 will result in weird movements to the right only
+        } else if direction == 270 {
+            direction + 10
+        } else {
+            direction
+        }
     }
 }
 

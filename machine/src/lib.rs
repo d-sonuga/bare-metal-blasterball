@@ -12,6 +12,7 @@ pub mod pic8259;
 pub mod instructions;
 pub mod registers;
 pub mod power;
+pub mod cmos;
 
 use memory::Addr;
 
