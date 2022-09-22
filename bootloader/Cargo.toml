@@ -15,3 +15,7 @@ sync = { path = "../sync" }
 drivers = { path = "../drivers" }
 collections = { path = "../collections" }
 event_hook = { path = "../event_hook" }
+num = { path = "../num" }
+
+[features]
+bios = ["artist/bios"]

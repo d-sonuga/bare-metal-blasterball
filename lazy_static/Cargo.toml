@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 tester = { path = "../tester" }
+sync = { path = "../sync" }

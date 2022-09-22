@@ -1,7 +1,9 @@
 [build]
 target = "../x86_64-blasterball.json"
 rustflags = [
-    "-C", "link-args=-Tlinker.ld"
+    #"-C", "link-args=-Tlinker.ld",
+    "-Z", "pre-link-args=/subsystem:efi_boot_service_driver",
+    "-g"
 ]
 
 [unstable]

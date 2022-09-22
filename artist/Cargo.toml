@@ -12,3 +12,6 @@ sync = { path = "../sync" }
 machine = { path = "../machine" }
 physics = { path = "../physics" }
 collections = { path = "../collections" }
+
+[features]
+bios = []

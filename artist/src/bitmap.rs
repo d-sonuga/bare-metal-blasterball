@@ -1,6 +1,8 @@
 use core::{mem, slice};
+use num::{Integer, Float};
 use collections::vec::Vec;
 use collections::vec;
+use crate::{Color, Hue, X_SCALE, Y_SCALE, SCREEN_HEIGHT};
 
 /// The number of colors in the default VGA palette.
 /// All bitmaps used are assumed to have this number of colors in their color tables
@@ -158,6 +160,63 @@ impl Bitmap {
     #[inline]
     pub fn height(&self) -> usize {
         u32::from_le_bytes(self.dib_header.image_height) as usize
+    }
+
+    /// The height of the bitmap when it is displayed on the screen
+    ///
+    /// This can be different from the normal bitmap height because
+    /// of the image scaling that takes place when the screen is too big
+    pub fn scaled_height(&self) -> usize {
+        self.height() * Y_SCALE
+    }
+
+    /// The width of the bitmap when it is displayed on the screen
+    pub fn scaled_width(&self) -> usize {
+        self.width() * X_SCALE
+    }
+    
+    /// Converts the raw pixel array in the bitmap to a vector
+    /// of colors expected by the screen buffer
+    pub fn convert_to_colors(image_data: Vec<u8>) -> Vec<'static, Color> {
+        let mut pixel_data = vec!(item_type => Color, capacity => image_data.len());
+        for raw_color in image_data.iter() {
+            pixel_data.push(Color::from_bitmap_data(*raw_color));
+        }
+        pixel_data
+    }
+
+    /// Converts the bitmap's image_data into the actual scaled
+    /// image data that will be drawn on the screen
+    pub fn convert_to_scaled_colors(self) -> Vec<'static, Color> {
+        let mut scaled_image = vec!(
+            item_type => Color,
+            capacity => self.width() * X_SCALE * self.height() * Y_SCALE
+        );
+        for y in 0..self.height() {
+            let i = y + 1;
+            for yp in y * Y_SCALE..i * Y_SCALE {
+                for x in 0..self.width() {
+                    let j = x + 1;
+                    for xp in x * X_SCALE..j * X_SCALE {
+                        let pixel_array_y = self.height() - y - 1;
+                        let raw_color = self.image_data[pixel_array_y*self.width()+x];
+                        scaled_image.push(Color::from_bitmap_data(raw_color));
+                    }
+                }
+            }
+        }
+        use crate::println;
+        let raw_y_scale = SCREEN_HEIGHT.to_f32() / 200.0;
+        if Y_SCALE.to_f32() < raw_y_scale {
+            let no_of_unfilled_rows = ((raw_y_scale - Y_SCALE.to_f32()) * SCREEN_HEIGHT.to_f32()).to_usize();
+            let last_row_start = scaled_image.len() - self.scaled_width();
+            for _ in 0..no_of_unfilled_rows {
+                for i in last_row_start..self.scaled_width() + last_row_start {
+                    scaled_image.push(scaled_image[i]);
+                }
+            }
+        }
+        scaled_image
     }
 }
 

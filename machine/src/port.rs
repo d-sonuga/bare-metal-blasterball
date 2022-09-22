@@ -58,6 +58,23 @@ impl PortReadWrite for Port<u16> {
     }
 }
 
+impl PortReadWrite for Port<u32> {
+    type T = u32;
+    fn read(&self) -> u32 {
+        let value: u32;
+        unsafe {
+            asm!("in eax, dx", out("eax") value, in("dx") self.0, options(nomem, nostack, preserves_flags));
+        }
+        value
+    }
+
+    fn write(&mut self, value: u32) {
+        unsafe {
+            asm!("out dx, eax", in("dx") self.0, in("eax") value, options(nomem, nostack, preserves_flags));
+        }
+    }
+}
+
 /// Port related constants
 pub mod consts {
     /// A port to which garabage data can be written for the purpose of waiting

@@ -7,48 +7,61 @@ use core::fmt::Write;
 use core::ops::{Index, IndexMut};
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
+use sync::once::Once;
 use physics::{Rectangle, Point};
 use collections::vec::Vec;
 use collections::queue::Queue;
 use collections::vec;
 use collections::queue;
 use machine::port::Port;
+use machine::memory::Addr;
 use num::Integer;
 
 pub mod font;
 pub mod bitmap;
 
+mod color;
+pub use color::{Color, Hue};
+
 use bitmap::{Bitmap, Transparency};
 
+#[cfg(feature = "bios")]
 pub const SCREEN_WIDTH: usize = 320;
+#[cfg(feature = "bios")]
 pub const SCREEN_HEIGHT: usize = 200;
+#[cfg(not(feature = "bios"))]
+pub const SCREEN_WIDTH: usize = 640;
+#[cfg(not(feature = "bios"))]
+pub const SCREEN_HEIGHT: usize = 480;
+
+/// Factor by which bitmaps should be scaled horizontally to fit the screen
+const X_SCALE: usize = SCREEN_WIDTH / 320;
+/// Factor by which bitmaps should be scaled vertically to fit the screen
+const Y_SCALE: usize = SCREEN_HEIGHT / 200;
+
+/// Height of the letters and numbers in the font module
+const FONT_HEIGHT: usize = 8;
+/// Width of the letters and numbers in the font module
+const FONT_WIDTH: usize = 8;
+
 pub const DOUBLE_BUFFER_SIZE: usize = SCREEN_HEIGHT * SCREEN_WIDTH;
+pub static SCREEN_BUFFER_ADDRESS: Once<Addr> = Once::new();
 
 lazy_static! {
     pub static ref ARTIST: Mutex<Artist> = Mutex::new(Artist {
         x_pos: 0,
         y_pos: 0,
-        color_code: ColorCode(Color(Color::Yellow), Color(Color::Black)),
-        vga_buffer: unsafe { &mut *(0xa0000 as *mut VGABuffer) },
+        color_code: ColorCode(Color::new(Color::Yellow), Color::new(Color::Black)),
+        vga_buffer: {
+            let screen_buffer_addr = SCREEN_BUFFER_ADDRESS.get()
+                .expect("The screen buffer is not initialized");
+            unsafe { &mut *(screen_buffer_addr.as_mut_ptr() as *mut VGABuffer) }
+        },
         double_buffer: VGABuffer {
-            pixels: [[Color(Color::Black); SCREEN_WIDTH]; SCREEN_HEIGHT]
-        },/*
-        move_bitmap_in_double_buffer_request_queue: queue!(
-            item_type => MoveBitmapInDoubleBufferRequest,
-            capacity => 10
-        )*/
+            pixels: [[Color::new(Color::Black); SCREEN_WIDTH]; SCREEN_HEIGHT]
+        }
     });
 }
-/*
-#[derive(Clone)]
-pub struct MoveBitmapInDoubleBufferRequest {
-    pub old_pos: Point,
-    pub new_pos: Point,
-    pub repr: Bitmap,
-    pub bottom_repr: Bitmap,
-    pub bottom_repr_pos: Point
-}
-*/
 unsafe impl Send for Artist {}
 
 #[macro_export]
@@ -61,6 +74,7 @@ macro_rules! println {
 macro_rules! print {
     ($($arg:tt)*) => ($crate::_print(format_args!($($arg)*)));
 }
+
 
 pub fn _print(args: fmt::Arguments) {
     use machine::instructions::interrupts;
@@ -78,34 +92,6 @@ pub fn clear_screen() {
     interrupts::without_interrupts(||{
         ARTIST.lock().clear_screen();
     });
-}
-
-/// A color that can be put in a pixel
-#[derive(Copy, Clone, PartialEq, Debug, Eq)]
-#[repr(transparent)]
-pub struct Color(u8);
-
-impl Color {
-    pub const Black: u8       = 0x0;
-    pub const Blue: u8        = 0x1;
-    pub const Green: u8       = 0x2;
-    pub const Cyan: u8        = 0x3;
-    pub const Red: u8         = 0x4;
-    pub const Magenta: u8     = 0x5;
-    pub const Brown: u8       = 0x6;
-    pub const LightGray: u8   = 0x7;
-    pub const DarkGray: u8    = 0x8;
-    pub const LightBlue: u8   = 0x9;
-    pub const LightGreen: u8  = 0xa;
-    pub const LightCyan: u8   = 0xb;
-    pub const LightRed: u8    = 0xc;
-    pub const Pink: u8        = 0xd;
-    pub const Yellow: u8      = 0xe;
-    pub const White: u8       = 0xf;
-
-    fn new(color: u8) -> Self {
-        Self(color)
-    }
 }
 
 /// A foreground/background color code for printing characters
@@ -155,7 +141,7 @@ pub struct Artist {
 impl Artist {
 
     /// Writes a byte to the VGA buffer
-    fn write_byte(&mut self, c: u8, write_target: WriteTarget) {
+    pub fn write_byte(&mut self, c: u8, write_target: WriteTarget) {
         if c == b'\n' {
             self.newline();
         } else if is_printable_ascii(c) {
@@ -164,20 +150,26 @@ impl Artist {
                 WriteTarget::DoubleBuffer => &mut self.double_buffer
             };
             for (y, byte) in font::FONT[c].iter().enumerate() {
-                for x in 0..8 {
-                    if byte & (1 << (8 - x - 1)) == 0 {
-                        buffer[self.y_pos + y][self.x_pos + x] = self.color_code.background();
-                    } else {
-                        buffer[self.y_pos + y][self.x_pos + x] = self.color_code.foreground();
+                let i = y + 1;
+                for yp in y * Y_SCALE..i*Y_SCALE {
+                    for x in 0..FONT_WIDTH {
+                        let j = x + 1;
+                        for xp in x * X_SCALE..j * X_SCALE {
+                            if byte & (1 << (FONT_WIDTH - x - 1)) == 0 {
+                                buffer[self.y_pos + yp][self.x_pos + xp] = self.color_code.background();
+                            } else {
+                                buffer[self.y_pos + yp][self.x_pos + xp] = self.color_code.foreground();
+                            }
+                        }
                     }
                 }
             }
-            self.x_pos += 8;
+            self.x_pos += FONT_WIDTH * X_SCALE;
             if self.x_pos >= SCREEN_WIDTH {
                 self.newline();
                 self.x_pos = 0;
             }
-            if self.y_pos >= SCREEN_HEIGHT - 8 {
+            if self.y_pos >= SCREEN_HEIGHT - FONT_HEIGHT * Y_SCALE {
                 self.y_pos = 0;
             }
         } else {
@@ -217,8 +209,8 @@ impl Artist {
     }
 
     /// Prints a newline in the VGA buffer
-    fn newline(&mut self) {
-        self.y_pos += 8;
+    pub fn newline(&mut self) {
+        self.y_pos += FONT_HEIGHT * Y_SCALE;
         self.x_pos = 0;
     }
 
@@ -276,14 +268,21 @@ impl Artist {
 
     pub fn draw_bitmap_in_double_buffer(&mut self, pos: Point, bitmap: &Bitmap) {
         for y in 0..bitmap.height() {
-            for x in 0..bitmap.width() {
-                let pixel_array_y = bitmap.height() - y - 1;
-                if pos_is_within_screen_bounds(pos, x, y) {
-                    let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
-                    if bitmap.transparency == Transparency::Black && color == Color::Black {
-                        continue;
+            let i = y + 1;
+            for yp in y * Y_SCALE..i * Y_SCALE {
+                for x in 0..bitmap.width() {
+                    let j = x + 1;
+                    for xp in x * X_SCALE..j * X_SCALE {
+                        let pixel_array_y = bitmap.height() - y - 1;
+                        if pos_is_within_screen_bounds(pos, x, y) {
+                            let raw_color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
+                            let color = Color::from_bitmap_data(raw_color);
+                            if bitmap.transparency == Transparency::Black && color == Color::Black {
+                                continue;
+                            }
+                            self.double_buffer[pos.y().to_usize() + yp][pos.x().to_usize() + xp] = color;
+                        }
                     }
-                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = Color::new(color);
                 }
             }
         }
@@ -340,17 +339,17 @@ impl Artist {
         }
     }*/
     
-    pub fn draw_background_in_double_buffer(&mut self, background: &Bitmap) {
+    pub fn draw_background_in_double_buffer(&mut self, color: &Color) {
         // Rust was too slow for this.
         // Had to use assembly
         use core::arch::asm;
         unsafe {
             asm!("
-                # Move 4 bytes at a time from esi to edi, ecx times
-                rep movsd",
-                in("esi") background.image_data.as_ptr(),
+                # Move the value in eax into edi, ecx times
+                rep stosd",
+                in("eax") color.to_num(),
                 in("edi") self.double_buffer.pixels.as_slice().as_ptr(),
-                in("ecx") DOUBLE_BUFFER_SIZE / 4
+                in("ecx") DOUBLE_BUFFER_SIZE
             );
         }
     }
@@ -361,6 +360,18 @@ impl Artist {
                 self.vga_buffer[y][x] = self.double_buffer[y][x];
             }
         }
+        use core::arch::asm;
+        /*
+        unsafe {
+            asm!("
+                # Move 4 bytes at a time from esi to edi, ecx times
+                rep movsd",
+                in("esi") self.double_buffer.pixels.as_slice().as_ptr(),
+                in("edi") self.vga_buffer.pixels.as_slice().as_ptr(),
+                in("ecx") DOUBLE_BUFFER_SIZE
+            );
+        }
+        */
     }
     /*
     pub fn request_to_move_bitmap_in_double_buffer(&mut self, request: MoveBitmapInDoubleBufferRequest) {
@@ -402,7 +413,7 @@ impl fmt::Write for Artist {
 
 /// Tells the artist where to write text to
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum WriteTarget {
+pub enum WriteTarget {
     VGABuffer,
     DoubleBuffer
 }
@@ -446,3 +457,48 @@ mod tests {
         assert!(is_within_bounds);
     }
 }
+
+
+
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+
+fn print_str(s: &str) {
+    for c in s.bytes() {
+        print_char(c);
+    }
+}
+
+pub fn print_char(c: u8) {
+        let mut vga = 0x80000000 as *mut Color;
+        let width = 640;
+        let height = 480;
+        let curr_x = X_POS.load(Ordering::Relaxed);
+        let curr_y = Y_POS.load(Ordering::Relaxed);
+        if c == b'\n' {
+            
+        } else if is_printable_ascii(c) {
+            for (y, byte) in font::FONT[c].iter().enumerate() {
+                for x in 0..8 {
+                    unsafe {
+                        if byte & (1 << (8 - x - 1)) == 0 {
+                            *vga.offset(((curr_y + y)*width+x+curr_x) as isize) = Color::new(Color::Yellow);
+                        } else {
+                            *vga.offset(((curr_y + y)*width+x) as isize) = Color::new(Color::Black);
+                        }
+                    }
+                }
+            }
+            if curr_x + 8 >= width {
+                X_POS.store(0, Ordering::Relaxed);
+                Y_POS.store(curr_y + 8, Ordering::Relaxed);
+            } else {
+                X_POS.store(curr_x + 8, Ordering::Relaxed);
+            }
+        } else {
+            print_char(b'?');
+        }
+    }
+
+    static X_POS: AtomicUsize = AtomicUsize::new(0);
+static Y_POS: AtomicUsize = AtomicUsize::new(0);

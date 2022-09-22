@@ -118,6 +118,11 @@ impl<'a, T: Clone> Vec<'a, T> {
         self.capacity
     }
 
+    /// Returns the pointer to the vector data
+    pub fn as_ptr(&self) -> *const T {
+        self.start_ptr
+    }
+
     /// Creates a new iterator over the references of the vector
     pub fn iter(&self) -> core::slice::Iter<T> {
         unsafe { core::slice::from_raw_parts(self.start_ptr as *const T, self.len) }

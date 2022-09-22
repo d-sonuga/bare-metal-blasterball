@@ -3,7 +3,6 @@
 .intel_syntax noprefix
 .global boot
 
-
 boot:
     xor ax, ax          # Zero out the segment registers
     mov ds, ax
@@ -157,7 +156,6 @@ print_char16:
 
 
 start_message_16bit:                .asciz "Successfully started in 16-bit real mode"
-start_message_32bit:                .asciz "Successfully switched to 32-bit protected mode"
 load_app_err_msg:                   .asciz "Failed to load app"
 load_rest_of_app_err_msg:           .asciz "Failed to load the rest of the bootloader"
 no_bios_int13h_ext_err_msg:         .asciz "No BIOS int13h extensions"

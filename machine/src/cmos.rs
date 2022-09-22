@@ -31,7 +31,7 @@ pub fn get_current_time() -> RTCTime {
 /// Reads a CMOS register
 ///
 /// Reference: https://wiki.osdev.org/CMOS#Accessing_CMOS_Registers
-fn read_register(register_no: u8) -> u8 {
+fn read_register(register_no: u8) -> usize {
     // A CMOS register is selected by writing the register number to port 0x70
     // The most significant bit of whichever register_no is written to port 0x70
     // controls the Non Maskable Interrupts (NMI)
@@ -45,19 +45,19 @@ fn read_register(register_no: u8) -> u8 {
     // Reading the value of the selected register
     let port: Port<u8> = Port::new(0x71);
     let val = port.read();
-    val
+    val as usize
 }
 
 /// The time that is retrieved from the CMOS
 #[derive(Debug)]
 pub struct RTCTime {
-    pub year: u8,
-    pub month: u8,
-    pub day_of_month: u8,
-    pub weekday: u8,
-    pub hours: u8,
-    pub minutes: u8,
-    pub seconds: u8
+    pub year: usize,
+    pub month: usize,
+    pub day_of_month: usize,
+    pub weekday: usize,
+    pub hours: usize,
+    pub minutes: usize,
+    pub seconds: usize
 }
 
 impl RTCTime {
@@ -65,7 +65,7 @@ impl RTCTime {
     ///
     /// Used for generating sufficiently "random" numbers in the game
     pub fn sum_of_fields(&self) -> usize {
-        (self.year + self.month + self.day_of_month + self.weekday + self.hours
-        + self.minutes + self.seconds) as usize
+        self.year + self.month + self.day_of_month + self.weekday + self.hours
+        + self.minutes + self.seconds
     }
 }
