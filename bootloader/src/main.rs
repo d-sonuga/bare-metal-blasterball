@@ -25,7 +25,6 @@ use artist::{println, clear_screen};
 use collections::allocator;
 use blasterball;
 
-use core::fmt::Write;
 
 macro_rules! Mem {
     // $n megabytes
@@ -33,9 +32,9 @@ macro_rules! Mem {
     ($n:expr, Kib) => { $n * 2u64.pow(10) };
 }
 
-const APP_STACK_SIZE: u64 = Mem!(9, Mib);
+const APP_STACK_SIZE: u64 = Mem!(10, Mib);
 
-const APP_HEAP_SIZE: u64 = Mem!(9, Mib);
+const APP_HEAP_SIZE: u64 = Mem!(10, Mib);
 
 fn setup_memory_and_run_game(mut mem_allocator: MemAllocator) -> ! {
     let stack_mem = mem_allocator.alloc_mem(MemRegionType::AppStack, APP_STACK_SIZE)
@@ -62,10 +61,16 @@ fn setup_memory_and_run_game(mut mem_allocator: MemAllocator) -> ! {
     }
     let heap_mem = unsafe { *(heap_mem_addr as *const MemChunk) };
     // It's important that the GDT is initialized before the interrupts
-    // I can't remember why
+    // The interrupts make use of the GDT
+    #[cfg(feature = "bios")]
     gdt::init();
-    interrupts::init();
+    // The allocator must be initialized before the interrupts
+    // because the event_hooks which handle interrupts make use of
+    // the allocator
     allocator::init(heap_mem);
+    #[cfg(feature = "bios")]
+    interrupts::init();
+    //let x = usize::MAX as *mut u8;
     blasterball::game_entry_point();
     loop {}
 }

@@ -15,3 +15,4 @@ physics = { path = "../physics" }
 collections = { path = "../collections" }
 sync = { path = "../sync" }
 num = { path = "../num" }
+lazy_static = { path = "../lazy_static" }

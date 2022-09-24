@@ -67,9 +67,30 @@ impl Pics {
     
     /// Handles the remapping of the PICs to the offsets
     pub fn init(&mut self) {
+        /*let mut x: u32;
+        use core::arch::asm;
+        unsafe {
+            asm!("
+                mov ecx, 0x1b
+                rdmsr
+                mov edi, eax",
+                out("edi") x
+            );
+        }
+        use num::Integer;
+        //writeln!(Printer, "The msr: {:b}", x);
+        x.unset_bit(11);
+        unsafe {
+            asm!("
+                mov edx, 0
+                mov eax, edi
+                mov ecx, 0x1b
+                wrmsr
+            ", in("edi") x);
+        }*/
+        //loop {}
         // Saving original interrupt masks
         let original_masks = self.read_masks();
-         
         
         let mut wait_port: Port<u8> = Port::new(WAIT_PORT_NO);
         let mut wait = || wait_port.write(0);
@@ -119,4 +140,105 @@ impl Pics {
 /// The PIC pic handles the IRQ irq only if the irq is within range of the PIC's numbers
 fn handles_interrupt(irq: u8, pic: Pic) -> bool {
     pic.offset <= irq && pic.offset + 8 > irq
+}
+
+
+
+
+
+
+const FONT_WIDTH: usize = 8;
+const FONT_HEIGHT: usize = 8;
+const SCREEN_WIDTH: usize = 640;
+const SCREEN_HEIGHT: usize = 480;
+use crate::font;
+const X_SCALE: usize = SCREEN_WIDTH / 320;
+const Y_SCALE: usize = SCREEN_HEIGHT / 200;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::fmt;
+pub struct Printer;
+impl fmt::Write for Printer {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for c in s.bytes() {
+            Printer.print_char(c);
+        }
+        Ok(())
+    }
+}
+
+static X_POS: AtomicUsize = AtomicUsize::new(0);
+static Y_POS: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct Color {
+    blue: u8,
+    green: u8,
+    red: u8,
+    reserved: u8
+}
+/*
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+struct Color(u8);
+*/
+use core::fmt::Write;
+impl Printer {
+    pub fn print_char(&mut self, c: u8) {
+        /*let mut vga = 0xa0000 as *mut Color;
+        let back = Color(0);
+        let fore = Color(0xe);*/
+        let mut vga = 0x80000000 as *mut Color;
+        let back = Color {
+            blue: 0,
+            green: 0,
+            red: 0,
+            reserved: 0
+        };
+        let fore = Color {
+            blue: 0,
+            green: 255,
+            red: 255,
+            reserved: 0
+        };
+        let curr_x = X_POS.load(Ordering::Relaxed);
+        let curr_y = Y_POS.load(Ordering::Relaxed);
+        if c == b'\n' {
+            X_POS.store(0, Ordering::Relaxed);
+            let old_y = Y_POS.load(Ordering::Relaxed);
+            Y_POS.store(old_y + FONT_HEIGHT * Y_SCALE, Ordering::Relaxed);
+        } else if is_printable_ascii(c) {
+            for (y, byte) in font::FONT[c].iter().enumerate() {
+                let i = y + 1;
+                for yp in y * Y_SCALE..i*Y_SCALE {
+                    for x in 0..FONT_WIDTH {
+                        let j = x + 1;
+                        for xp in x * X_SCALE..j * X_SCALE {
+                            unsafe {
+                                if byte & (1 << (FONT_WIDTH - x - 1)) == 0 {
+                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = back;
+                                } else {
+                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = fore;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            X_POS.store(curr_x + FONT_WIDTH * X_SCALE, Ordering::Relaxed);
+            if X_POS.load(Ordering::Relaxed) >= SCREEN_WIDTH {
+                X_POS.store(0, Ordering::Relaxed);
+                Y_POS.store(curr_y + FONT_HEIGHT * Y_SCALE, Ordering::Relaxed);
+            }
+        } else {
+            self.print_char(b'?');
+        }
+    }
+}
+
+pub fn is_printable_ascii(c: u8) -> bool {
+    match c {
+        b' '..=b'~' => true,
+        _ => false
+    }
 }

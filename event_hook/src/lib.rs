@@ -218,6 +218,10 @@ impl<'a> EventHooker<'a> {
     /// assert_eq!(unhook_result, Err(EventHookError::IdxNotFound));
     /// ```
     pub fn unhook_event(&mut self, idx: usize, event_kind: EventKind) -> Result<(), Error> {
+        use artist::println;
+        println!("hereereerrrrr");
+        //panic!("rirpimoef");
+        loop {}
         for (i, handler) in self[event_kind].iter_mut().enumerate() {
             if let Handler {idx, func, ..} = handler {
                 self[event_kind].remove(i);

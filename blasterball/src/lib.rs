@@ -15,16 +15,18 @@ use num::{Integer, Float};
 use sync::mutex::MutexGuard;
 use collections::vec::Vec;
 use collections::vec;
-use artist::{println, print, SCREEN_HEIGHT, SCREEN_WIDTH, Artist, Color};
+use artist::{println, print, SCREEN_HEIGHT, SCREEN_WIDTH, Artist, Color, X_SCALE, Y_SCALE};
 use artist::bitmap::{Bitmap, Transparency};
 use artist;
+use collections::allocator::get_allocator;
 
 mod sound;
 
 pub fn game_entry_point() -> ! {
     //unsafe { sound::figure_out_how_to_make_sounds() };
-    println!("Loading");
+    println!("Loading...");
     loop {
+        //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
         let mut game = Game::init();
         game.main_loop();
         core::mem::drop(game);
@@ -121,7 +123,7 @@ impl Game {
                     KeyCode::Enter => {
                         if !self.has_started {
                             self.ball_char.object.velocity.direction = self.generate_direction();
-                            self.ball_char.object.velocity.speed = 5;
+                            self.ball_char.object.velocity.speed = 7;
                             self.has_started = true;
                         } else if self.paused {
                             self.paused = false;
@@ -203,7 +205,7 @@ impl Game {
                     break;
                 }
             }
-            let old_pos = self.ball_char.object.update_pos(1);
+            let old_pos = self.ball_char.object.update_pos(1, X_SCALE, Y_SCALE);
             let (ball_passed_through_paddle, point_at_paddle_level_opt) = ball_passed_through_paddle(old_pos, self.ball_char.object.pos, self.ball_char.object.velocity.direction, &self.paddle_char);
             if ball_passed_through_paddle {
                 self.ball_char.object.pos = point_at_paddle_level_opt.unwrap();
@@ -217,8 +219,8 @@ impl Game {
 
     fn move_paddle(&mut self, direction: PaddleDirection) {
         let diff = match direction {
-            PaddleDirection::Left => Point(-4, 0),
-            PaddleDirection::Right => Point(4, 0)
+            PaddleDirection::Left => Point(-4 * X_SCALE.to_i16(), 0),
+            PaddleDirection::Right => Point(4 * X_SCALE.to_i16(), 0)
         };
         let old_pos = self.paddle_char.object.pos;
         self.paddle_char.object.pos += diff;
@@ -281,12 +283,17 @@ impl Game {
     }
 
     fn draw_game_in_double_buffer(&self, artist: &mut MutexGuard<Artist>) {
+        let a = get_allocator();
         artist.draw_background_in_double_buffer(&self.background);
+        let a = get_allocator();
         artist.draw_bitmap_in_double_buffer(self.paddle_char.object.pos, &self.paddle_char.repr);
+        let a = get_allocator();
         for block_char in self.blocks.iter() {
             artist.draw_bitmap_in_double_buffer(block_char.object.pos, &block_char.repr);
         }
+        let a = get_allocator();
         artist.draw_bitmap_in_double_buffer(self.ball_char.object.pos, &self.ball_char.repr);
+        let a = get_allocator();
     }
 }
 
@@ -390,3 +397,8 @@ enum Visibility {
     Visible,
     Invisible
 }
+
+
+
+
+

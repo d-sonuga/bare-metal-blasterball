@@ -752,8 +752,8 @@ impl From<EFIMemRegion> for MemRegion {
             EFIMemRegionType::Reserved => MemRegionType::Reserved,
             EFIMemRegionType::LoaderCode => MemRegionType::App,
             EFIMemRegionType::LoaderData => MemRegionType::App,
-            EFIMemRegionType::BootServicesCode => MemRegionType::Usable,
-            EFIMemRegionType::BootServicesData => MemRegionType::Usable,
+            EFIMemRegionType::BootServicesCode => MemRegionType::InUse,
+            EFIMemRegionType::BootServicesData => MemRegionType::InUse,
             EFIMemRegionType::RuntimeServicesCode => MemRegionType::InUse,
             EFIMemRegionType::RuntimeServicesData => MemRegionType::InUse,
             EFIMemRegionType::Conventional => MemRegionType::Usable,
@@ -763,7 +763,7 @@ impl From<EFIMemRegion> for MemRegion {
             EFIMemRegionType::MemMappedIO => MemRegionType::InUse,
             EFIMemRegionType::MemMappedIOPortSpace => MemRegionType::InUse,
             EFIMemRegionType::PalCode => MemRegionType::InUse,
-            EFIMemRegionType::Persistent => MemRegionType::Usable
+            EFIMemRegionType::Persistent => MemRegionType::InUse
         };
         MemRegion {
             range: AddrRange::new(

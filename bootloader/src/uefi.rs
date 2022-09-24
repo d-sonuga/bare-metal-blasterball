@@ -1,5 +1,7 @@
 use core::ffi::c_void;
 use core::{ptr, mem};
+use core::ops::BitOr;
+use drivers::keyboard::uefi::{EFIInputKey, EFIKeyData, EFIKeyToggle};
 use machine::memory::{Addr, EFIMemMapDescriptor, EFIMemRegion, MemMap, MemAllocator};
 use num::Integer;
 use sync::mutex::Mutex;
@@ -9,6 +11,7 @@ use crate::setup_memory_and_run_game;
 
 //static mut PRINTER: Option<Printer> = None;
 static mut SYS_TABLE: Option<*mut EFISystemTable> = None;
+static mut FRAMEBUFFER: Option<Addr> = None;
 
 /// The main entry point of a UEFI executable as described in specification version 2.7
 ///
@@ -21,12 +24,143 @@ static mut SYS_TABLE: Option<*mut EFISystemTable> = None;
 ///
 /// * UEFI Spec, version 2.7, page 103, chapter 4: EFI System Table, section 4.1
 #[no_mangle]
-pub unsafe extern "efiapi" fn efi_main(image_handle: EFIHandle, system_table: *mut EFISystemTable) -> ! {
-    init_table(system_table);
-    let boot_services = (*system_table).boot_services;
+pub unsafe extern "efiapi" fn efi_main(image_handle: EFIHandle, systable: *mut EFISystemTable) -> ! {
+    init_table(systable);
+    let boot_services = (*systable).boot_services;
     clear_screen();
+
+    /*let mut stdin: *mut EFISimpleTextInputExProtocol = ptr::null_mut();
+    let status = ((*boot_services).locate_protocol)(
+        &EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL_GUID,
+        ptr::null_mut(),
+        &mut stdin
+    );
+    if status != STATUS_SUCCESS {
+        panic!("Couldn't find the text input protocol");
+    }*/
     
-    init_graphics().unwrap();
+    /*
+    let mut key_data: EFIKeyData = EFIKeyData {
+        key: EFIInputKey {
+            scancode: EFIScanCode::Null,
+            unicode_char: 0
+        },
+        key_state: EFIInputKeyState {
+            key_modifiers: EFIKeyModifiers::None,
+            key_toggle_state: EFIKeyToggle::None,
+        }
+    };
+    loop {
+        let status = ((*stdin).read_key_stroke)(stdin, &mut key_data);
+        if status == STATUS_SUCCESS {
+            writeln!(PreExitPrinter, "{:?}", key_data);
+        } else if status == ERROR_BIT | STATUS_NOT_READY {
+            continue;
+        } else {
+            writeln!(PreExitPrinter, "Failed with status: {:?}", (status << 1) >> 1);
+            loop {}
+        }
+    }*/
+    /*
+    let mut key: *mut EFIInputKey = ptr::null_mut();
+    let mut stdin = (*systable).stdin;
+    loop {
+        let status = ((*stdin).read_key_stroke)(
+            stdin,
+            key
+        );
+        if status == STATUS_SUCCESS {
+            writeln!(PreExitPrinter, "{:?}", *key);
+        } else if status == STATUS_NOT_READY | ERROR_BIT {
+            continue;
+        } else {
+            writeln!(PreExitPrinter, "Unexpected status: {:?}", status << 1 >> 1);
+        }
+    }
+    */
+    let framebuffer = init_graphics().unwrap();
+    init_framebuffer(framebuffer);
+    
+    extern "efiapi" fn notify_fn(event: EFIEvent, context: *mut c_void) {
+        unsafe {
+        let systable = SYS_TABLE.as_mut();
+        if systable.is_none() {
+            return;
+        }
+        let systable = systable.unwrap();
+        let mut stdin = (**systable).stdin;
+        let mut key: *mut EFIInputKey = ptr::null_mut();
+        let status = ((*stdin).read_key_stroke)(
+            stdin,
+            key
+        );
+        if status == STATUS_SUCCESS {
+            use event_hook;
+            use event_hook::{Event};
+            use drivers::keyboard::uefi::EFIScanCode;
+            use drivers::keyboard::{KeyDirection, KeyCode, KeyModifiers, KeyEvent};
+            let k = *key;
+            let d = KeyDirection::Down;
+            let m = KeyModifiers::new();
+            if k.unicode_char == 10 || k.unicode_char == 13 {
+                event_hook::send_event(Event::Keyboard(KeyCode::Enter, d, m));
+            }
+            if k.scancode == EFIScanCode::CursorLeft {
+                event_hook::send_event(Event::Keyboard(KeyCode::ArrowLeft, d, m));
+            }
+            if k.scancode == EFIScanCode::CursorRight {
+                event_hook::send_event(Event::Keyboard(KeyCode::ArrowRight, d, m));
+            }
+            if k.scancode == EFIScanCode::Escape {
+                event_hook::send_event(Event::Keyboard(KeyCode::Escape, d, m));
+            }
+            if k.unicode_char == 88 {
+                event_hook::send_event(Event::Keyboard(KeyCode::X, d, m));
+            }
+            if k.unicode_char == 89 {
+                event_hook::send_event(Event::Keyboard(KeyCode::Y, d, m));
+            }
+            /*
+            let k = KeyEvent::try_from(*key);
+            if let Ok(event) = k {
+                event_hook::send_event(Event::Keyboard(event.keycode, event.direction, event.key_modifiers));
+            }*/
+        } else if status == STATUS_NOT_READY | ERROR_BIT {
+            return;
+        } else {
+            panic!("Unexpected status: {:?}", status << 1 >> 1);
+            loop {}
+        }
+        }
+    }
+    let mut event: EFIEvent = ptr::null_mut();
+    let status = ((*boot_services).create_event)(
+        EFIEventType::Timer | EFIEventType::NotifySignal,
+        EFITpl::Notify,
+        notify_fn,
+        ptr::null_mut(),
+        &mut event
+    );
+    if status != STATUS_SUCCESS {
+        writeln!(PreExitPrinter, "failed to create event with status: {}", status << 1 >> 1);
+        loop {}
+    }
+    let status = ((*boot_services).set_timer)(
+        event,
+        EFITimerType::Periodic,
+        100000
+    );
+    if status != STATUS_SUCCESS {
+        writeln!(PreExitPrinter, "Failed to set timer with status: {}", status << 1 >> 1);
+        loop {}
+    }
+    let status = ((*boot_services).signal_event)(event);
+    if status != STATUS_SUCCESS {
+        writeln!(PreExitPrinter, "Failed to signal timer event with status {}", status << 1 >> 1);
+    }
+//loop {}
+    writeln!(PreExitPrinter, "Here!! Again!!");
+    
 
     let mut mmap = exit_boot_services(image_handle).expect("Unable to exit boot services");
     let mem_allocator = MemAllocator::new(&mut mmap);
@@ -35,7 +169,7 @@ pub unsafe extern "efiapi" fn efi_main(image_handle: EFIHandle, system_table: *m
 }
 
 /// Initializes the graphics mode to a 640x480 mode
-unsafe fn init_graphics() -> Result<(), &'static str> {
+unsafe fn init_graphics() -> Result<Addr, &'static str> {
     let sys_table = SYS_TABLE.as_mut().unwrap();
     let boot_services = (**sys_table).boot_services;
     // To change the graphics mode
@@ -66,9 +200,9 @@ unsafe fn init_graphics() -> Result<(), &'static str> {
             if status != STATUS_SUCCESS {
                 return Err("Failed to set a mode");
             }
-            let framebuffer = (*(*gop).mode).frame_buffer_base;
-            crate::artist_init::init(Addr::new(framebuffer));
-            return Ok(())
+            let framebuffer = Addr::new((*(*gop).mode).frame_buffer_base);
+            crate::artist_init::init(framebuffer);
+            return Ok(framebuffer)
         }
         i += 1;
     }
@@ -115,7 +249,7 @@ unsafe fn exit_boot_services(image_handle: EFIHandle) -> Result<MemMap, &'static
     }
     let mut mem_map_buffer = mem_map_buffer.cast::<EFIMemRegion>();
     let mut m = 0;
-    loop {
+    //loop {
         // Get the memory map
         let status = ((*boot_services).get_mem_map)(
             &mut map_size,
@@ -124,6 +258,8 @@ unsafe fn exit_boot_services(image_handle: EFIHandle) -> Result<MemMap, &'static
             &mut descriptor_size,
             &mut descriptor_version
         );
+        //break;
+        /*
         let boot_exit_status = ((*boot_services).exit_boot_services)(
             image_handle,
             map_key
@@ -139,12 +275,17 @@ unsafe fn exit_boot_services(image_handle: EFIHandle) -> Result<MemMap, &'static
             continue;
         } else {
             return Err("Unexpected boot exit status");
-        }
-    }
+        }*/
+    //}
+    let mmap_descr = EFIMemMapDescriptor {
+        mmap_ptr: mem_map_buffer,
+        mmap_size: map_size,
+        mmap_entry_size: descriptor_size
+    };
+    return Ok(MemMap::from(mmap_descr));
 }
 
 type Status = usize;
-type Uintn = u32;
 
 /// This bit is set in all error status codes
 const ERROR_BIT: usize = 1 << (core::mem::size_of::<usize>() * 8 - 1);
@@ -154,6 +295,7 @@ const STATUS_SUCCESS: usize = 0;
 const STATUS_BUFFER_TOO_SMALL: Status = 5;
 const STATUS_INVALID_PARAMETER: Status = 2;
 const STATUS_DEVICE_ERROR: Status = 7;
+const STATUS_NOT_READY: Status = 6;
 
 /// Memory types
 const MEM_TYPE_BOOT_SERVICES_DATA: u32 = 4;
@@ -181,7 +323,7 @@ pub struct EFISystemTable {
     stdin_handle: EFIHandle,
     /// A pointer to the EFISimpleTextInputProtocol
     /// interface that is associated with `console_in_handle`
-    stdin: *mut [u8; 24],
+    stdin: *mut EFISimpleTextInputProtocol,
     /// The handle for the active console output device
     stdout_handle: EFIHandle,
     /// A pointer to the EFISimpleTextOutputProtocol
@@ -253,6 +395,83 @@ struct SimpleTextOutputMode {
     cursor_visible: bool
 }
 
+type EFIEvent = *mut u8;
+
+/// A UEFI Protocol for obtaining input from the stdin device
+#[repr(C)]
+struct EFISimpleTextInputProtocol {
+    /// Resets the stdin device
+    reset: extern "efiapi" fn(*mut EFISimpleTextInputProtocol, extended_verification: bool) -> Status,
+    /// Returns the next input character from the stdin device
+    /// If there is no pending key stroke, the function returns STATUS_NOT_READY
+    ///
+    /// # Arguments
+    ///
+    /// * this: A pointer to the stdin instance
+    /// * key: A pointer to a buffer that is filled in with the keystroke information
+    ///   for the key that was pressed
+    read_key_stroke: extern "efiapi" fn(this: *mut EFISimpleTextInputProtocol, key: *mut EFIInputKey) -> Status,
+    /// Event to use with BootServices.wait_for_event to wait for a key
+    /// to be available
+    wait_for_key: EFIEvent
+}
+
+const EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL_GUID: Guid = Guid {
+    first: 0xdd9e7534,
+    second: 0x7762,
+    third: 0x4698,
+    fourth: [0x8c, 0x14, 0xf5, 0x85, 0x17, 0xa6, 0x25, 0xaa]
+};
+
+/// An extension to the SimpleTextInputProtocol used to obtain
+/// input from the stdin device
+#[repr(C)]
+struct EFISimpleTextInputExProtocol {
+    /// Resets the stdin device
+    reset: extern "efiapi" fn(this: *mut EFISimpleTextInputExProtocol, extended_verification: bool) -> Status,
+    /// Reads the next input character from the stdin device
+    ///
+    /// # Arguments
+    ///
+    /// * this: A pointer to the EFISimpleTextInputExProtocol instance
+    /// * key_data: A pointer to a buffer filled in with the keystroke
+    ///   state data for the pressed key
+    read_key_stroke: extern "efiapi" fn(
+        this: *mut EFISimpleTextInputExProtocol,
+        key_data: &mut EFIKeyData
+    ) -> Status,
+    /// Event to be used with BootServices.wait_for_event
+    /// to wait for a key to be available
+    wait_for_key: EFIEvent,
+    /// Sets the state of the stdin device
+    set_state: extern "efiapi" fn(
+        this: *mut EFISimpleTextInputExProtocol,
+        key_toggle_state: *mut EFIKeyToggle
+    ) -> Status,
+    /// Register a notification function to be called when a given
+    /// key sequence is hit
+    ///
+    /// # Arguments
+    ///
+    /// * this: A pointer to the EFISimpleTextInputExProtocol
+    /// * key_data: A pointer to a buffer filled in with the key stroke notification
+    /// * key_notify_fn: Points to the function to be called when the key sequence specified
+    ///   by key_data is typed
+    /// * notify_handle: Points to the unique handle assigned to the registered notification
+    register_key_notify: extern "efiapi" fn(
+        this: *mut EFISimpleTextInputExProtocol,
+        key_data: *mut EFIKeyData,
+        // This is a guess
+        key_notify_fn: extern "C" fn(),
+        notify_handle: &mut EFIHandle
+    ) -> Status,
+    /// Remove a specific notification function
+    unregister_key_notify: extern "efiapi" fn(
+        this: *mut EFISimpleTextInputExProtocol,
+        notify_handle: EFIHandle
+    ) -> Status
+}
+
 /// An entry in the EFIConfigurationTable
 #[repr(C)]
 struct EFIConfigurationTableEntry {
@@ -269,7 +488,7 @@ struct EFIBootServices {
     /// The table header
     header: EFITableHeader,
     /// These fields are not needed in this project
-    unneeded0: [u8; 4*8],
+    unneeded0: [usize; 4],
     /// Returns the current memory map
     ///
     /// # Arguments
@@ -307,13 +526,40 @@ struct EFIBootServices {
         size: usize,
         buffer: &mut *mut u8
     ) -> Status,
+    unneeded0_5: [usize; 1],
+    /// Creates an event
+    ///
+    /// # Arguments
+    ///
+    /// * event_type: The type of event to create and its mode and attributes
+    /// * notify_tpl: The task priority level of event notifications
+    /// * notify_fn: Pointer to the event's notification function
+    /// * notify_context: Pointer to the notification function's context
+    /// * event: Pointer to the newly created event if the call succeeds 
+    create_event: extern "efiapi" fn(
+        event_type: u32,
+        notify_tpl: EFITpl,
+        notify_fn: extern "efiapi" fn(event: EFIEvent, context: *mut c_void),
+        notify_context: *mut c_void,
+        event: &mut EFIEvent
+    ) -> Status,
+    /// Sets the type of time and the trigger time for a particular event
+    ///
+    /// # Arguments
+    ///
+    /// * event: The timer event that has to be signalled at the specific time
+    /// * time_type: The type of tim specified in trigger_time
+    /// * trigger_time: The number of 100ns until the timer expires
+    set_timer: extern "efiapi" fn(event: EFIEvent, time_type: EFITimerType, trigger_time: u64) -> Status,
+    unneeded0_75: [usize; 1],
+    signal_event: extern "efiapi" fn(event: EFIEvent) -> Status,
     /// These fields are not needed in this project
-    unneeded1: [u8; 20*8],
+    unneeded1: [usize; 15],
     /// Releases all firmware provided boot services and hands control over to
     /// the OS
     exit_boot_services: unsafe extern "efiapi" fn(image_handle: EFIHandle, map_key: usize) -> Status,
     /// These fields are not needed in this project
-    unneeded2: [u8; 10*8],
+    unneeded2: [usize; 10],
     /// A UEFI protocol for finding the location of a protocol with Guid `protocol_guid`
     ///
     /// # Arguments
@@ -328,7 +574,60 @@ struct EFIBootServices {
         out_protocol: &mut *mut EFIGraphicsOutputProtocol
     ) -> Status,
     /// These fields are not needed in this project
-    unneeded3: [u8; 6*8]
+    unneeded3: [usize; 6]
+}
+
+#[repr(u32)]
+enum EFIEventType {
+    /// The event is a timer and may be passed to BootServices.set_timer
+    // Timers only function during boot services time
+    Timer                       = 0x80000000,
+    /// The event is allocated from runtime memory,
+    /// so it remains valid even after exiting boot services
+    Runtime                     = 0x40000000,
+    /// The event will be queued whenever the event is being waited on
+    ///  (if it's not already in the signalled state)
+    NotifyWait                  = 0x00000100,
+    /// The event is queued whenever the event is signalled
+    NotifySignal                = 0x00000200,
+    /// The event is to be notified whenever BootServices.exit_boot_services is called
+    SignalExitBootServices      = 0x00000201,
+    /// The event is to be notified whenever a virtual address by the appropriate
+    /// BootService function
+    SignalVirtualAddressChange  = 0x60000202
+}
+
+impl BitOr for EFIEventType {
+    type Output = u32;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        self as u32 | rhs as u32
+    }
+}
+
+impl BitOr<EFIEventType> for u32 {
+    type Output = u32;
+    fn bitor(self, rhs: EFIEventType) -> u32 {
+        self | rhs as u32
+    }
+}
+
+#[repr(usize)]
+enum EFITpl {
+    Application     = 4,
+    Callback        = 8,
+    Notify          = 16,
+    HighLevel       = 31
+}
+
+#[derive(Debug)]
+#[repr(u32)]
+enum EFITimerType {
+    /// The timer setting is to be cancelled 
+    Cancel      = 0,
+    /// The timer is to go off on every tick
+    Periodic    = 1,
+    /// The timer is to go off at the next tick
+    Relative    = 2
 }
 
 /// A unique 64-bit aligned 128-bit value used to identify protocols
@@ -592,6 +891,12 @@ fn init_table(sys_table: *mut EFISystemTable) {
     }
 }
 
+fn init_framebuffer(fb: Addr) {
+    unsafe {
+        FRAMEBUFFER = Some(fb);
+    }
+}
+
 pub fn _print(args: fmt::Arguments) {
     PreExitPrinter.write_fmt(args).unwrap();
 }
@@ -605,6 +910,7 @@ fn clear_screen() {
 }
 
 use core::sync::atomic::{AtomicUsize, Ordering};
+use artist::{FONT_WIDTH, FONT_HEIGHT, X_SCALE, Y_SCALE, SCREEN_WIDTH, SCREEN_HEIGHT};
 
 
 static X_POS: AtomicUsize = AtomicUsize::new(0);
@@ -614,40 +920,39 @@ static Y_POS: AtomicUsize = AtomicUsize::new(0);
 use artist::font;
 impl PostExitPrinter {
     pub fn print_char(&mut self, c: u8) {
-        let mut vga = 0x80000000 as *mut EFIGraphicsOutputBltPixel;
-        let width = 640;
-        let height = 480;
+        unsafe { if FRAMEBUFFER.as_mut() == None {
+            return;
+        } }
+        use artist::Color;
+        let mut vga = unsafe { (*FRAMEBUFFER.as_mut().unwrap()).as_mut_ptr() as *mut Color };
         let curr_x = X_POS.load(Ordering::Relaxed);
         let curr_y = Y_POS.load(Ordering::Relaxed);
         if c == b'\n' {
-            
+            X_POS.store(0, Ordering::Relaxed);
+            let old_y = Y_POS.load(Ordering::Relaxed);
+            Y_POS.store(old_y + FONT_HEIGHT * Y_SCALE, Ordering::Relaxed);
         } else if is_printable_ascii(c) {
             for (y, byte) in font::FONT[c].iter().enumerate() {
-                for x in 0..8 {
-                    unsafe {
-                        if byte & (1 << (8 - x - 1)) == 0 {
-                            *vga.offset(((curr_y + y)*width+x+curr_x) as isize) = EFIGraphicsOutputBltPixel {
-                                blue: 255,
-                                green: 0,
-                                red: 0,
-                                reserved: 0
-                            };
-                        } else {
-                            *vga.offset(((curr_y + y)*width+x) as isize) = EFIGraphicsOutputBltPixel {
-                                blue: 0,
-                                green: 255,
-                                red: 0,
-                                reserved: 0
-                            };
+                let i = y + 1;
+                for yp in y * Y_SCALE..i*Y_SCALE {
+                    for x in 0..FONT_WIDTH {
+                        let j = x + 1;
+                        for xp in x * X_SCALE..j * X_SCALE {
+                            unsafe {
+                                if byte & (1 << (FONT_WIDTH - x - 1)) == 0 {
+                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = Color::new(Color::Blue);
+                                } else {
+                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = Color::new(Color::Black);
+                                }
+                            }
                         }
                     }
                 }
             }
-            if curr_x + 8 >= width {
+            X_POS.store(curr_x + FONT_WIDTH * X_SCALE, Ordering::Relaxed);
+            if X_POS.load(Ordering::Relaxed) >= SCREEN_WIDTH {
                 X_POS.store(0, Ordering::Relaxed);
-                Y_POS.store(curr_y + 8, Ordering::Relaxed);
-            } else {
-                X_POS.store(curr_x + 8, Ordering::Relaxed);
+                Y_POS.store(curr_y + FONT_HEIGHT * Y_SCALE, Ordering::Relaxed);
             }
         } else {
             self.print_char(b'?');

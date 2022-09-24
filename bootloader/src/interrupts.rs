@@ -7,7 +7,6 @@ use sync::mutex::Mutex;
 use drivers::keyboard::Keyboard;
 use event_hook::{EventHooker, Event};
 use event_hook;
-use artist::{println, print};
 use crate::gdt::DOUBLE_FAULT_IST_INDEX;
 
 /// The base IDT index number of the first PIC's IRQs
@@ -19,7 +18,6 @@ pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
-        idt.brkpoint.set_handler(brkpoint_handler);
         idt.double_fault.set_handler(double_fault_handler)
             .set_ist_stack_index(DOUBLE_FAULT_IST_INDEX);
         idt.general_protection_fault.set_handler(general_protection_fault_handler);
@@ -57,18 +55,18 @@ pub fn init(){
     PICS.lock().init();
     enable_interrupts();
 }
-
+/*
 extern "x86-interrupt" fn brkpoint_handler(stack_frame: InterruptStackFrame) {
-    println!("A breakpoint: {:?}", stack_frame);
+    //println!("A breakpoint: {:?}", stack_frame);
 }
-
+*/
 extern "x86-interrupt" fn page_fault_handler(sf: InterruptStackFrame, err_code: u64) {
-    println!("greetings from the page fault handler");
+    panic!("greetings from the page fault handler");
     loop {}
 }
 
 extern "x86-interrupt" fn double_fault_handler(sf: InterruptStackFrame, err_code: u64) -> ! {
-    println!("Double Fault\nErr Code: {}\n{:?}", err_code, sf);
+    panic!("Double Fault\nErr Code: {}\n{:?}", err_code, sf);
     loop {}
 }
 
@@ -84,12 +82,11 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
     let mut keyboard = KEYBOARD.lock();
     if let Ok(Some(event)) = keyboard.process_byte(scancode) {
         event_hook::send_event(Event::Keyboard(event.keycode, event.direction, event.key_modifiers));
-        //print!("{:?} {:?} {:?}", event.keycode, event.direction, event.key_modifiers);
     }
     unsafe { PICS.lock().end_of_interrupt(InterruptIndex::Keyboard.as_u8()) }
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(sf: InterruptStackFrame, err_code: u64) {
-    println!("greetings from the general protection fault handler");
+    panic!("greetings from the general protection fault handler");
     loop {}
 }

@@ -22,7 +22,7 @@ fn test_get_set_unset_bit(){
         n.set_bit(i);
         assert_eq!(n, 1 << i);
         assert_eq!(BitState::Set, n.get_bit(i));
-        n.unset_bit(i);
+        n.unset_bit(i, 666);
         assert_eq!(BitState::Unset, n.get_bit(i));
     }
 }
@@ -30,7 +30,7 @@ fn test_get_set_unset_bit(){
 #[test]
 fn test_get_set_bits(){
     let mut n = 0u16;
-    n.set_bits(0..3, 0b101);
+    n.set_bits(0..3, 0b101, 100);
     assert_eq!(n, 0b101);
     assert_eq!(0b101, n.get_bits(0..3));
 

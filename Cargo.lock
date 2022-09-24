@@ -22,6 +22,7 @@ dependencies = [
  "collections",
  "drivers",
  "event_hook",
+ "lazy_static",
  "machine",
  "num",
  "physics",

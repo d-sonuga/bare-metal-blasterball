@@ -112,7 +112,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
                             if byte & (1 << (8 - x - 1)) == 0 {
                                 *vga_buffer.offset(char_y*320+char_x) = Color::Black;
                             } else {
-                                *vga_buffer.offset(char_y*320+char_x) = Color::Yellow;
+                                *vga_buffer.offset(char_y*320+char_x) = Color::Pink;
                             }
                         }
                     }

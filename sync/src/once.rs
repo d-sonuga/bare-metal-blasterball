@@ -123,13 +123,24 @@ impl<T> Once<T> {
                 Err(s) => status = s
             }
         }
-
-        Ok(match status {
+        /*
+        let s = match status {
             OnceStatus::Complete => unsafe { self.force_get() },
             OnceStatus::Panicked => panic!("Initializer panicked"),
             OnceStatus::Running => self.poll().unwrap(),
             OnceStatus::Incomplete => unsafe { unreachable_unchecked() }
-        })
+        };
+        */
+        if status == OnceStatus::Complete {
+            Ok(unsafe { self.force_get() })
+        } else if status == OnceStatus::Panicked {
+            Ok(panic!("Initializer panicked"))
+        } else if status == OnceStatus::Running {
+            Ok(self.poll().unwrap())
+        } else {
+            Ok(unsafe { unreachable_unchecked() })
+        }
+        //Ok(s)
     }
 
     fn wait(&self) -> &T {
@@ -195,5 +206,15 @@ impl<'a> Drop for Finish<'a> {
 
 #[cfg(test)]
 mod tests {
-    
+    use super::*;
+
+    #[test]
+    fn test_works() {
+        let mut n = 0;
+        let num = Once::new();
+        num.call_once(|| n);
+        n += 1;
+        num.call_once(|| n);
+        assert_eq!(*num.get().unwrap(), 0);
+    }
 }

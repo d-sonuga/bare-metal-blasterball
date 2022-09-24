@@ -35,14 +35,14 @@ pub const SCREEN_WIDTH: usize = 640;
 pub const SCREEN_HEIGHT: usize = 480;
 
 /// Factor by which bitmaps should be scaled horizontally to fit the screen
-const X_SCALE: usize = SCREEN_WIDTH / 320;
+pub const X_SCALE: usize = SCREEN_WIDTH / 320;
 /// Factor by which bitmaps should be scaled vertically to fit the screen
-const Y_SCALE: usize = SCREEN_HEIGHT / 200;
+pub const Y_SCALE: usize = SCREEN_HEIGHT / 200;
 
 /// Height of the letters and numbers in the font module
-const FONT_HEIGHT: usize = 8;
+pub const FONT_HEIGHT: usize = 8;
 /// Width of the letters and numbers in the font module
-const FONT_WIDTH: usize = 8;
+pub const FONT_WIDTH: usize = 8;
 
 pub const DOUBLE_BUFFER_SIZE: usize = SCREEN_HEIGHT * SCREEN_WIDTH;
 pub static SCREEN_BUFFER_ADDRESS: Once<Addr> = Once::new();
@@ -62,6 +62,7 @@ lazy_static! {
         }
     });
 }
+
 unsafe impl Send for Artist {}
 
 #[macro_export]
@@ -274,7 +275,7 @@ impl Artist {
                     let j = x + 1;
                     for xp in x * X_SCALE..j * X_SCALE {
                         let pixel_array_y = bitmap.height() - y - 1;
-                        if pos_is_within_screen_bounds(pos, x, y) {
+                        if pos_is_within_screen_bounds(pos, xp, yp) {
                             let raw_color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
                             let color = Color::from_bitmap_data(raw_color);
                             if bitmap.transparency == Transparency::Black && color == Color::Black {
@@ -343,25 +344,37 @@ impl Artist {
         // Rust was too slow for this.
         // Had to use assembly
         use core::arch::asm;
+        #[cfg(feature = "bios")]
+        // Divided by 4 because stosd stores 4 bytes at a time
+        // and a color is 1 byte in BIOS's VGA 320x200 mode
+        let no_of_movements = DOUBLE_BUFFER_SIZE / 4; 
+        #[cfg(not(feature = "bios"))]
+        // A color is 4 bytes because of the UEFI setup and 4 bytes
+        // are moved at a time, so this has to be the full buffer
+        let no_of_movements = DOUBLE_BUFFER_SIZE;
         unsafe {
             asm!("
                 # Move the value in eax into edi, ecx times
                 rep stosd",
                 in("eax") color.to_num(),
                 in("edi") self.double_buffer.pixels.as_slice().as_ptr(),
-                in("ecx") DOUBLE_BUFFER_SIZE
+                in("ecx") no_of_movements 
             );
         }
     }
 
     pub fn draw_on_screen_from_double_buffer(&mut self) {
-        for y in 0..SCREEN_HEIGHT {
-            for x in 0..SCREEN_WIDTH {
-                self.vga_buffer[y][x] = self.double_buffer[y][x];
+        /*
+        fn draw() {
+            for y in 0..SCREEN_HEIGHT {
+                for x in 0..SCREEN_WIDTH {
+                    self.vga_buffer[y][x] = self.double_buffer[y][x];
+                }
             }
         }
+        */
         use core::arch::asm;
-        /*
+        ///*
         unsafe {
             asm!("
                 # Move 4 bytes at a time from esi to edi, ecx times
@@ -371,7 +384,7 @@ impl Artist {
                 in("ecx") DOUBLE_BUFFER_SIZE
             );
         }
-        */
+        //*/
     }
     /*
     pub fn request_to_move_bitmap_in_double_buffer(&mut self, request: MoveBitmapInDoubleBufferRequest) {
@@ -459,7 +472,7 @@ mod tests {
 }
 
 
-
+/*
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 
@@ -500,5 +513,6 @@ pub fn print_char(c: u8) {
         }
     }
 
-    static X_POS: AtomicUsize = AtomicUsize::new(0);
+static X_POS: AtomicUsize = AtomicUsize::new(0);
 static Y_POS: AtomicUsize = AtomicUsize::new(0);
+*/

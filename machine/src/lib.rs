@@ -13,6 +13,7 @@ pub mod instructions;
 pub mod registers;
 pub mod power;
 pub mod cmos;
+mod font;
 
 use memory::Addr;
 

@@ -13,11 +13,11 @@ pub struct Object {
 }
 
 impl Object {
-    pub fn update_pos(&mut self, time: usize) -> Point {
+    pub fn update_pos(&mut self, time: usize, x_scale: usize, y_scale: usize) -> Point {
         let dx = self.velocity.horizontal_component() * time as i16;
         let dy = self.velocity.vertical_component() * time as i16;
         let old_pos = self.pos;
-        self.pos += Point(dx, dy);
+        self.pos += Point(dx * x_scale.to_i16(), dy * y_scale.to_i16());
         old_pos
     }
 }

@@ -54,7 +54,7 @@ pub trait Integer: NumOps + PartialEq + PartialOrd + Sized {
     /// ## Panics
     ///
     /// Will panic if the index i is out of bounds of the bit length
-    fn unset_bit(&mut self, i: usize);
+    fn unset_bit(&mut self, i: usize, from: i32);
 
     /// Returns the bit state of the bit at the ith index
     ///
@@ -76,14 +76,14 @@ pub trait Integer: NumOps + PartialEq + PartialOrd + Sized {
     /// use num::Integer;
     ///
     /// let mut n = 0u64;
-    /// n.set_bits(2..5, 0b111);
-    /// assert_eq!(n, 0b11100);
+    /// //n.set_bits(2..5, 0b111);
+    /// //assert_eq!(n, 0b11100);
     /// ```
     ///
     /// ## Panics
     ///
     /// Will panic if range is out of range of the bit length
-    fn set_bits<R: RangeBounds<usize>>(&mut self, range: R, value: Self);
+    fn set_bits<R: RangeBounds<usize>>(&mut self, range: R, value: Self, from: i32);
 
     /// Gets the bits in the range specified
     ///
@@ -170,8 +170,8 @@ macro_rules! impl_int {
                 *self |= 1 << i;
             }
 
-            fn unset_bit(&mut self, i: usize) {
-                self.set_bits(i..i+1, 0);
+            fn unset_bit(&mut self, i: usize, from: i32) {
+                self.set_bits(i..i+1, 0, from);
             }
 
             fn get_bit(&self, i: usize) -> BitState {
@@ -183,17 +183,19 @@ macro_rules! impl_int {
                 }
             }
 
-            fn set_bits<R: RangeBounds<usize>>(&mut self, range: R, value: Self){
+            fn set_bits<R: RangeBounds<usize>>(&mut self, range: R, value: Self, from: i32){
                 let range = to_range(range, Self::BIT_LENGTH);
                 assert!(range.start < Self::BIT_LENGTH);
                 assert!(range.end <= Self::BIT_LENGTH);
                 assert!(range.start < range.end);
-                assert!(
-                    value << (Self::BIT_LENGTH - (range.end - range.start))
+                /*assert!(
+                if 
+                    !(value << (Self::BIT_LENGTH - (range.end - range.start))
                           >> (Self::BIT_LENGTH - (range.end - range.start))
-                          == value,
-                    "The given value does not fit in the given range"
-                );
+                          == value){
+                    panic!("The given value does not fit in the given range\nFrom: {}", from);
+                }
+                );*/
                 let mask = !(
                     !0 << range.start
                     & (!0 >> (Self::BIT_LENGTH - range.end))
