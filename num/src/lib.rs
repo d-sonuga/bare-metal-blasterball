@@ -47,7 +47,7 @@ pub trait Integer: NumOps + PartialEq + PartialOrd + Sized {
     /// use num::Integer;
     ///
     /// let mut n = 0b1010_1011_1u128;
-    /// n.unset_bit(4);
+    /// n.unset_bit(4, 2);
     /// assert_eq!(n, 0b1010_0011_1u128);
     /// ```
     ///
@@ -188,14 +188,10 @@ macro_rules! impl_int {
                 assert!(range.start < Self::BIT_LENGTH);
                 assert!(range.end <= Self::BIT_LENGTH);
                 assert!(range.start < range.end);
-                /*assert!(
-                if 
-                    !(value << (Self::BIT_LENGTH - (range.end - range.start))
+                assert!(value << (Self::BIT_LENGTH - (range.end - range.start))
                           >> (Self::BIT_LENGTH - (range.end - range.start))
-                          == value){
-                    panic!("The given value does not fit in the given range\nFrom: {}", from);
-                }
-                );*/
+                          == value
+                );
                 let mask = !(
                     !0 << range.start
                     & (!0 >> (Self::BIT_LENGTH - range.end))
@@ -351,7 +347,7 @@ macro_rules! impl_float {
                     331..=344 => 2.0,
                     345..=359 => 3.0,
                     360 => 1.0,
-                    big_int => (big_int % 360).sinf32()
+                    big_int => (big_int % 360).cosf32()
                 }
             }
 

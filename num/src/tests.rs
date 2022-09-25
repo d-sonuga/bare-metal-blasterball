@@ -48,4 +48,6 @@ fn test_cast() {
     assert_eq!(-1.0f32.to_i16(), -1i16);
     assert_eq!(32i16.to_usize(), 32usize);
     assert_eq!(12usize.to_i16(), 12i16);
+    assert_eq!(285usize.sinf32().to_i16(), -3i16);
+    assert_eq!((285 + 360usize).sinf32().to_i16(), -3i16);
 }
