@@ -20,7 +20,6 @@ version = "0.1.0"
 dependencies = [
  "artist",
  "collections",
- "drivers",
  "event_hook",
  "lazy_static",
  "machine",
@@ -37,7 +36,6 @@ dependencies = [
  "artist",
  "blasterball",
  "collections",
- "drivers",
  "event_hook",
  "lazy_static",
  "machine",
@@ -56,16 +54,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "drivers"
-version = "0.1.0"
-
-[[package]]
 name = "event_hook"
 version = "0.1.0"
 dependencies = [
  "artist",
  "collections",
- "drivers",
  "lazy_static",
  "machine",
  "sync",
@@ -84,6 +77,7 @@ name = "machine"
 version = "0.1.0"
 dependencies = [
  "num",
+ "sync",
 ]
 
 [[package]]

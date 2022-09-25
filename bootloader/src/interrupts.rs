@@ -2,9 +2,9 @@ use core::fmt::Write;
 use machine::interrupts::{InterruptDescriptorTable, InterruptStackFrame};
 use machine::pic8259::Pics;
 use machine::instructions::interrupts::enable as enable_interrupts;
+use machine::keyboard::Keyboard;
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
-use drivers::keyboard::Keyboard;
 use event_hook::{EventHooker, Event};
 use event_hook;
 use crate::gdt::DOUBLE_FAULT_IST_INDEX;
@@ -55,11 +55,7 @@ pub fn init(){
     PICS.lock().init();
     enable_interrupts();
 }
-/*
-extern "x86-interrupt" fn brkpoint_handler(stack_frame: InterruptStackFrame) {
-    //println!("A breakpoint: {:?}", stack_frame);
-}
-*/
+
 extern "x86-interrupt" fn page_fault_handler(sf: InterruptStackFrame, err_code: u64) {
     panic!("greetings from the page fault handler");
     loop {}

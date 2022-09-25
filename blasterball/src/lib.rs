@@ -5,11 +5,11 @@
 use core::panic::PanicInfo;
 use core::fmt::Write;
 use machine::memory::MemMap;
+use machine::keyboard::{KeyCode, KeyDirection, KeyModifiers};
 use machine::cmos;
 use machine;
 use event_hook;
 use event_hook::{EventKind, Event, box_fn};
-use drivers::keyboard::{KeyCode, KeyDirection, KeyModifiers};
 use physics::{Rectangle, Point, Object, Velocity};
 use num::{Integer, Float};
 use sync::mutex::MutexGuard;

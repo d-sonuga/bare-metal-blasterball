@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 collections = { path = "../collections" }
-drivers = { path = "../drivers" }
 lazy_static = { path = "../lazy_static" }
 machine = { path = "../machine" }
 sync = { path = "../sync" }

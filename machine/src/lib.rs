@@ -1,7 +1,7 @@
 //! Abstractions for dealing with the x86_64 machine
 
-#![no_std]
-#![feature(abi_x86_interrupt, array_windows)]
+#![cfg_attr(not(test), no_std)]
+#![feature(abi_x86_interrupt, array_windows, abi_efiapi)]
 
 pub mod interrupts;
 pub mod memory;
@@ -13,6 +13,8 @@ pub mod instructions;
 pub mod registers;
 pub mod power;
 pub mod cmos;
+pub mod uefi;
+pub mod keyboard;
 mod font;
 
 use memory::Addr;

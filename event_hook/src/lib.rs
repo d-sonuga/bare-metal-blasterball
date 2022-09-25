@@ -6,7 +6,7 @@
 use core::ops::{Index, IndexMut};
 use core::clone::Clone;
 use core::marker::PhantomData;
-use drivers::keyboard::{KeyCode, KeyDirection, KeyModifiers};
+use machine::keyboard::{KeyCode, KeyDirection, KeyModifiers};
 use machine::instructions::interrupts::without_interrupts;
 use collections::vec::Vec;
 use collections::allocator::{get_allocator, Allocator};

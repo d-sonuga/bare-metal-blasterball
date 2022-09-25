@@ -8,7 +8,6 @@ members = [
     "lazy_static",
     "machine",
     "sync",
-    "drivers",
     "collections",
     "event_hook",
     "physics"
