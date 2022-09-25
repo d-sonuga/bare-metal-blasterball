@@ -2,7 +2,7 @@ use core::ffi::c_void;
 use core::{ptr, mem};
 use core::ops::BitOr;
 use drivers::keyboard::uefi::{EFIInputKey, EFIKeyData, EFIKeyToggle};
-use machine::memory::{Addr, EFIMemMapDescriptor, EFIMemRegion, MemMap, MemAllocator};
+use machine::memory::{Addr, EFIMemMapDescriptor, EFIMemRegion, MemMap, MemAllocator, EFIMemRegionType, MemChunk};
 use num::Integer;
 use sync::mutex::Mutex;
 use crate::interrupts;
@@ -99,6 +99,7 @@ pub unsafe extern "efiapi" fn efi_main(image_handle: EFIHandle, systable: *mut E
             use event_hook::{Event};
             use drivers::keyboard::uefi::EFIScanCode;
             use drivers::keyboard::{KeyDirection, KeyCode, KeyModifiers, KeyEvent};
+            /*
             let k = *key;
             let d = KeyDirection::Down;
             let m = KeyModifiers::new();
@@ -114,17 +115,17 @@ pub unsafe extern "efiapi" fn efi_main(image_handle: EFIHandle, systable: *mut E
             if k.scancode == EFIScanCode::Escape {
                 event_hook::send_event(Event::Keyboard(KeyCode::Escape, d, m));
             }
-            if k.unicode_char == 88 {
+            if k.unicode_char == 120 {
                 event_hook::send_event(Event::Keyboard(KeyCode::X, d, m));
             }
-            if k.unicode_char == 89 {
+            if k.unicode_char == 121 {
                 event_hook::send_event(Event::Keyboard(KeyCode::Y, d, m));
             }
-            /*
+            */
             let k = KeyEvent::try_from(*key);
             if let Ok(event) = k {
                 event_hook::send_event(Event::Keyboard(event.keycode, event.direction, event.key_modifiers));
-            }*/
+            }
         } else if status == STATUS_NOT_READY | ERROR_BIT {
             return;
         } else {
@@ -148,7 +149,7 @@ pub unsafe extern "efiapi" fn efi_main(image_handle: EFIHandle, systable: *mut E
     let status = ((*boot_services).set_timer)(
         event,
         EFITimerType::Periodic,
-        100000
+        1
     );
     if status != STATUS_SUCCESS {
         writeln!(PreExitPrinter, "Failed to set timer with status: {}", status << 1 >> 1);
@@ -158,13 +159,11 @@ pub unsafe extern "efiapi" fn efi_main(image_handle: EFIHandle, systable: *mut E
     if status != STATUS_SUCCESS {
         writeln!(PreExitPrinter, "Failed to signal timer event with status {}", status << 1 >> 1);
     }
-//loop {}
-    writeln!(PreExitPrinter, "Here!! Again!!");
-    
 
-    let mut mmap = exit_boot_services(image_handle).expect("Unable to exit boot services");
-    let mem_allocator = MemAllocator::new(&mut mmap);
-    setup_memory_and_run_game(mem_allocator);
+    //let mut mmap = get_mmap(image_handle).expect("Unable to exit boot services");
+    //let mem_allocator = MemAllocator::new(&mut mmap);
+    let (stack_mem, heap_mem) = alloc_game_mem(boot_services).unwrap();
+    setup_memory_and_run_game(stack_mem, heap_mem);
     loop {}
 }
 
@@ -207,9 +206,8 @@ unsafe fn init_graphics() -> Result<Addr, &'static str> {
         i += 1;
     }
 }
-
-/// Exits the UEFI boot services and returns the memory map
-unsafe fn exit_boot_services(image_handle: EFIHandle) -> Result<MemMap, &'static str> {
+/*
+unsafe fn get_mmap(image_handle: EFIHandle) -> Result<MemMap, &'static str> {
     let sys_table = SYS_TABLE.as_mut().unwrap();
     let boot_services = (**sys_table).boot_services;
 
@@ -283,6 +281,41 @@ unsafe fn exit_boot_services(image_handle: EFIHandle) -> Result<MemMap, &'static
         mmap_entry_size: descriptor_size
     };
     return Ok(MemMap::from(mmap_descr));
+}
+*/
+unsafe fn alloc_game_mem(boot_services: *mut EFIBootServices) -> Result<(MemChunk, MemChunk), &'static str> {
+    use crate::{APP_STACK_SIZE, APP_HEAP_SIZE};
+    let mut stack_mem: *mut u8 = ptr::null_mut();
+    let status = ((*boot_services).alloc_pool)(
+        EFIMemRegionType::LoaderData,
+        APP_STACK_SIZE as usize,
+        &mut stack_mem
+    );
+    if status != STATUS_SUCCESS {
+        return Err("Failed to allocate stack mem");
+    }
+    let mut heap_mem: *mut u8 = ptr::null_mut();
+    let status = ((*boot_services).alloc_pool)(
+        // Have to use LoaderData because for some unknown reason
+        // the boot services alloc_pool returns an invalid parameter error
+        // with a request for Conventional memory
+        EFIMemRegionType::LoaderData,
+        APP_HEAP_SIZE as usize,
+        &mut heap_mem
+    );
+    if status != STATUS_SUCCESS {
+        return Err("Failed to allocate heap mem");
+    }
+    Ok((
+        MemChunk {
+            start_addr: Addr::from_ptr(stack_mem),
+            size: APP_STACK_SIZE
+        },
+        MemChunk {
+            start_addr: Addr::from_ptr(heap_mem),
+            size: APP_HEAP_SIZE
+        }
+    ))
 }
 
 type Status = usize;
@@ -522,7 +555,7 @@ struct EFIBootServices {
     /// * size: the number of bytes tp allocate from the pool
     /// * buffer: a pointer to a pointer to the allocated buffer if the call succeeds
     alloc_pool: unsafe extern "efiapi" fn(
-        pool_type: u32,
+        pool_type: EFIMemRegionType,
         size: usize,
         buffer: &mut *mut u8
     ) -> Status,

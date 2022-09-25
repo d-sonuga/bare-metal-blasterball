@@ -99,27 +99,27 @@ pub trait Integer: NumOps + PartialEq + PartialOrd + Sized {
     /// Will panic if the range is out of range of the bit length
     fn get_bits<R: RangeBounds<usize>>(&self, range: R) -> Self;
 
-    fn to_u8(&self) -> u8;
+    fn to_u8(self) -> u8;
 
-    fn to_u16(&self) -> u16;
+    fn to_u16(self) -> u16;
 
-    fn to_i16(&self) -> i16;
+    fn to_i16(self) -> i16;
 
-    fn to_u32(&self) -> u32;
+    fn to_u32(self) -> u32;
 
-    fn to_u64(&self) -> u64;
+    fn to_u64(self) -> u64;
 
-    fn to_u128(&self) -> u128;
+    fn to_u128(self) -> u128;
 
-    fn to_i128(&self) -> i128;
+    fn to_i128(self) -> i128;
 
-    fn to_usize(&self) -> usize;
+    fn to_usize(self) -> usize;
 
-    fn to_f32(&self) -> f32;
+    fn to_f32(self) -> f32;
     
-    fn sinf32(&self) -> f32;
+    fn sinf32(self) -> f32;
 
-    fn cosf32(&self) -> f32;
+    fn cosf32(self) -> f32;
 }
 
 pub trait NumOps<Rhs=Self, Output=Self>:
@@ -128,6 +128,7 @@ pub trait NumOps<Rhs=Self, Output=Self>:
     + Div<Rhs, Output=Output>
     + Mul<Rhs, Output=Output>
     + Rem<Rhs, Output=Output>
+    + core::marker::Copy
     {}
 
 impl <T, Rhs, Output> NumOps<Rhs, Output> for T where
@@ -136,28 +137,18 @@ impl <T, Rhs, Output> NumOps<Rhs, Output> for T where
         + Div<Rhs, Output=Output>
         + Mul<Rhs, Output=Output>
         + Rem<Rhs, Output=Output>
+        + core::marker::Copy
     {}
 
 pub trait Float: NumOps + Sized {
-    const DEGREES_TO_RADIANS_FACTOR: f32 = 0.0174533;
     /// Computes the sine of a number as an f32 and rounds it off to a whole number
-    fn sinf32(&self) -> f32;
+    fn sinf32(self) -> f32;
 
     /// Computes the cosine of a number as an f32 and rounds it off to a whole number
-    fn cosf32(&self) -> f32;
-
-
-    /// Rounds the float to the nearest whole number and converts it to an unsigned integer
-    fn to_uint(&self) -> u128;
-
-    /// Rounds the float to the nearest whole number and converts it to a signed integer
-    fn to_int(&self) -> i128;
-
-    /// Rounds the float to the nearest whole number and converts it to a usize
-    fn to_usize(&self) -> usize;
+    fn cosf32(self) -> f32;
 
     /// Rounds the float to the nearest whole number and coverts it to an i16
-    fn to_i16(&self) -> i16;
+    fn to_i16(self) -> i16;
 }
 
 macro_rules! impl_int {
@@ -207,49 +198,48 @@ macro_rules! impl_int {
                 *self >> range.start & (!0 >> (Self::BIT_LENGTH - range.end))
             }
 
-            fn sinf32(&self) -> f32 {
+            fn sinf32(self) -> f32 {
                 self.to_f32().sinf32()
             }
 
-            fn cosf32(&self) -> f32 {
+            fn cosf32(self) -> f32 {
                 self.to_f32().cosf32()
             }
 
-            fn to_u8(&self) -> u8 {
-                *self as u8
+            fn to_u8(self) -> u8 {
+                self as u8
             }
 
-            fn to_u16(&self) -> u16 {
-                *self as u16
+            fn to_u16(self) -> u16 {
+                self as u16
             }
 
-            fn to_i16(&self) -> i16 {
-                *self as i16
+            fn to_i16(self) -> i16 {
+                self as i16
             }
 
-            fn to_u32(&self) -> u32 {
-                *self as u32
+            fn to_u32(self) -> u32 {
+                self as u32
             }
 
-            fn to_u64(&self) -> u64 {
-                *self as u64
+            fn to_u64(self) -> u64 {
+                self as u64
             }
 
-            fn to_i128(&self) -> i128 {
-                *self as i128
+            fn to_i128(self) -> i128 {
+                self as i128
             }
 
-            fn to_u128(&self) -> u128 {
-                *self as u128
+            fn to_u128(self) -> u128 {
+                self as u128
             }
 
-            fn to_f32(&self) -> f32 {
-                *self as f32
+            fn to_f32(self) -> f32 {
+                self as f32
             }
 
-            #[inline]
-            fn to_usize(&self) -> usize {
-                *self as usize
+            fn to_usize(self) -> usize {
+                self as usize
             }
         }
         
@@ -272,8 +262,8 @@ macro_rules! impl_float {
         // For a full explanation of the coordinate system that this resulted from,
         // check the physics crate
         impl Float for $T {
-            fn sinf32(&self) -> f32 {
-                match *self as u64 {
+            fn sinf32(self) -> f32 {
+                match self as u64 {
                     0 => 0.0,
                     1..=15 => 1.0,
                     16..=30 => 1.0,
@@ -313,8 +303,8 @@ macro_rules! impl_float {
                 }
             }
             
-            fn cosf32(&self) -> f32 {
-                match *self as u64 {
+            fn cosf32(self) -> f32 {
+                match self as u64 {
                     0 => 1.0,
                     1..=15 => 3.0,
                     16..=30 => 2.0,
@@ -351,30 +341,8 @@ macro_rules! impl_float {
                 }
             }
 
-            fn to_uint(&self) -> u128 {
-                if *self as f32 - ((*self as u128) as f32) >= 0.5 {
-                    (*self as u128) + 1
-                } else {
-                    *self as u128
-                }
-            }
-            
-            fn to_int(&self) -> i128 {
-                if *self as f32 - ((*self as i128) as f32) >= 0.5 {
-                    (*self as i128) + 1
-                } else if *self as f32 - ((*self as i128) as f32) <= -0.5 {
-                    (*self as i128) - 1
-                } else {
-                    *self as i128
-                }
-            }
-
-            fn to_usize(&self) -> usize {
-                self.to_uint() as usize
-            }
-
-            fn to_i16(&self) -> i16 {
-                self.to_int() as i16
+            fn to_i16(self) -> i16 {
+                self as i16
             }
         }
     )+}

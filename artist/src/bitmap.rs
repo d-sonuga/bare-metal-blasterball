@@ -177,9 +177,9 @@ impl Bitmap {
     
     /// Converts the raw pixel array in the bitmap to a vector
     /// of colors expected by the screen buffer
-    pub fn convert_to_colors(image_data: Vec<u8>) -> Vec<'static, Color> {
-        let mut pixel_data = vec!(item_type => Color, capacity => image_data.len());
-        for raw_color in image_data.iter() {
+    pub fn convert_to_colors(&self) -> Vec<'static, Color> {
+        let mut pixel_data = vec!(item_type => Color, capacity => self.image_data.len());
+        for raw_color in self.image_data.iter() {
             pixel_data.push(Color::from_bitmap_data(*raw_color));
         }
         pixel_data
@@ -187,7 +187,7 @@ impl Bitmap {
 
     /// Converts the bitmap's image_data into the actual scaled
     /// image data that will be drawn on the screen
-    pub fn convert_to_scaled_colors(self) -> Vec<'static, Color> {
+    pub fn convert_to_scaled_bitmap(self) -> ScaledBitmap {
         let mut scaled_image = vec!(
             item_type => Color,
             capacity => self.width() * X_SCALE * self.height() * Y_SCALE
@@ -205,18 +205,29 @@ impl Bitmap {
                 }
             }
         }
-        use crate::println;
-        let raw_y_scale = SCREEN_HEIGHT.to_f32() / 200.0;
-        if Y_SCALE.to_f32() < raw_y_scale {
-            let no_of_unfilled_rows = ((raw_y_scale - Y_SCALE.to_f32()) * SCREEN_HEIGHT.to_f32()).to_usize();
-            let last_row_start = scaled_image.len() - self.scaled_width();
-            for _ in 0..no_of_unfilled_rows {
-                for i in last_row_start..self.scaled_width() + last_row_start {
-                    scaled_image.push(scaled_image[i]);
-                }
-            }
+        ScaledBitmap {
+            image_data: scaled_image,
+            width: self.scaled_width(),
+            height: self.scaled_height(),
+            transparency: self.transparency
         }
-        scaled_image
+    }
+}
+
+#[derive(Clone)]
+pub struct ScaledBitmap {
+    pub image_data: Vec<'static, Color>,
+    width: usize,
+    height: usize,
+    pub transparency: Transparency
+}
+
+impl ScaledBitmap {
+    pub fn height(&self) -> usize {
+        self.height
+    }
+    pub fn width(&self) -> usize {
+        self.width
     }
 }
 

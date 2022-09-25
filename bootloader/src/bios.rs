@@ -8,6 +8,7 @@ global_asm!(include_str!("asm/stage_3.s"));
 use crate::gdt;
 use crate::interrupts;
 use crate::setup_memory_and_run_game;
+use crate::{APP_STACK_SIZE, APP_HEAP_SIZE};
 
 use core::sync::atomic::{Ordering};
 use core::slice;
@@ -88,7 +89,11 @@ pub extern "C" fn main() -> ! {
 
     crate::artist_init::init(VGA_BUFFER_ADDR);
 
-    setup_memory_and_run_game(mem_allocator);
+    let stack_mem = mem_allocator.alloc_mem(MemRegionType::AppStack, APP_STACK_SIZE)
+        .expect("Couldn't allocate memory for the stack");
+    let heap_mem = mem_allocator.alloc_mem(MemRegionType::Heap, APP_HEAP_SIZE)
+        .expect("Couldn't allocate memory for the heap");
+    setup_memory_and_run_game(stack_mem, heap_mem);
 
     loop {}
 }

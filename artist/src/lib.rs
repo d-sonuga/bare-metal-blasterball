@@ -23,7 +23,7 @@ pub mod bitmap;
 mod color;
 pub use color::{Color, Hue};
 
-use bitmap::{Bitmap, Transparency};
+use bitmap::{Bitmap, ScaledBitmap, Transparency};
 
 #[cfg(feature = "bios")]
 pub const SCREEN_WIDTH: usize = 320;
@@ -267,7 +267,7 @@ impl Artist {
     }
 */
 
-    pub fn draw_bitmap_in_double_buffer(&mut self, pos: Point, bitmap: &Bitmap) {
+    /*pub fn draw_bitmap_in_double_buffer(&mut self, pos: Point, bitmap: &Bitmap) {
         for y in 0..bitmap.height() {
             let i = y + 1;
             for yp in y * Y_SCALE..i * Y_SCALE {
@@ -287,7 +287,7 @@ impl Artist {
                 }
             }
         }
-    }
+    }*/
 
     /*fn move_bitmap_in_double_buffer(&mut self, old_pos: Point, new_pos: Point, bitmap: Bitmap, bottom_repr: Bitmap, bottom_repr_pos: Point) {
         for y in 0..bitmap.height() {
@@ -362,20 +362,82 @@ impl Artist {
             );
         }
     }
+/*
+    pub fn move_bitmap_in_double_buffer(&mut self, bitmap: &Bitmap, old_pos: Point, new_pos: Point, background: &Color) {
+        self.erase_bitmap_from_double_buffer(bitmap, old_pos, background);
+        self.draw_bitmap_in_double_buffer(new_pos, bitmap);
+    }
+
+    pub fn erase_bitmap_from_double_buffer(&mut self, bitmap: &Bitmap, pos: Point, background: &Color) {
+        for y in 0..bitmap.height() {
+            let i = y + 1;
+            for yp in y * Y_SCALE..i * Y_SCALE {
+                for x in 0..bitmap.width() {
+                    let j = x + 1;
+                    for xp in x * X_SCALE..j * X_SCALE {
+                        let pixel_array_y = bitmap.height() - y - 1;
+                        if pos_is_within_screen_bounds(pos, xp, yp) {
+                            let raw_color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
+                            let color = Color::from_bitmap_data(raw_color);
+                            if bitmap.transparency == Transparency::Black && color == Color::Black {
+                                continue;
+                            }
+                            self.vga_buffer[pos.y().to_usize() + yp][pos.x().to_usize() + xp] = *background;
+                        }
+                    }
+                }
+            }
+        }
+    }*/
+
+    pub fn move_scaled_bitmap_in_double_buffer(&mut self, bitmap: &ScaledBitmap, old_pos: Point, new_pos: Point, background: &Color) {
+        self.erase_scaled_bitmap_from_double_buffer(bitmap, old_pos, background);
+        self.draw_scaled_bitmap_in_double_buffer(new_pos, bitmap);
+    }
+
+    pub fn draw_scaled_bitmap_in_double_buffer(&mut self, pos: Point, bitmap: &ScaledBitmap) {
+        for y in 0..bitmap.height() {
+            for x in 0..bitmap.width() {
+                if pos_is_within_screen_bounds(pos, x, y) {
+                    let pixel_array_y = bitmap.height() - y - 1;
+                    let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
+                    //let color = Color::from_bitmap_data(raw_color);
+                    if bitmap.transparency == Transparency::Black && color == Color::Black {
+                        continue;
+                    }
+                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = color;
+                }
+            }
+        }
+    }
+
+    pub fn erase_scaled_bitmap_from_double_buffer(&mut self, bitmap: &ScaledBitmap, pos: Point, background: &Color) {
+        for y in 0..bitmap.height() {
+            for x in 0..bitmap.width() {
+                if pos_is_within_screen_bounds(pos, x, y) {
+                    let pixel_array_y = bitmap.height() - y - 1;
+                    let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
+                    if bitmap.transparency == Transparency::Black && color == Color::Black {
+                        continue;
+                    }
+                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = *background;
+                }
+            }
+        }
+    }
 
     pub fn draw_on_screen_from_double_buffer(&mut self) {
-        /*
-        fn draw() {
+        
+        /*fn draw() {
             for y in 0..SCREEN_HEIGHT {
                 for x in 0..SCREEN_WIDTH {
                     self.vga_buffer[y][x] = self.double_buffer[y][x];
                 }
             }
-        }
-        */
-        use core::arch::asm;
-        ///*
+        }*/
+        
         unsafe {
+            use core::arch::asm;
             asm!("
                 # Move 4 bytes at a time from esi to edi, ecx times
                 rep movsd",
@@ -384,7 +446,6 @@ impl Artist {
                 in("ecx") DOUBLE_BUFFER_SIZE
             );
         }
-        //*/
     }
     /*
     pub fn request_to_move_bitmap_in_double_buffer(&mut self, request: MoveBitmapInDoubleBufferRequest) {

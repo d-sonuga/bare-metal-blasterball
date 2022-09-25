@@ -1,6 +1,6 @@
 #![no_main]
 #![no_std]
-#![feature(array_windows)]
+#![feature(array_windows, stmt_expr_attributes)]
 
 use core::panic::PanicInfo;
 use core::fmt::Write;
@@ -16,7 +16,7 @@ use sync::mutex::MutexGuard;
 use collections::vec::Vec;
 use collections::vec;
 use artist::{println, print, SCREEN_HEIGHT, SCREEN_WIDTH, Artist, Color, X_SCALE, Y_SCALE};
-use artist::bitmap::{Bitmap, Transparency};
+use artist::bitmap::{Bitmap, ScaledBitmap, Transparency};
 use artist;
 use collections::allocator::get_allocator;
 
@@ -63,7 +63,8 @@ struct Game {
     shutdown_attempted: bool,
     paused_msg_has_been_drawn: bool,
     background: Color,
-    blocks: Vec<'static, Character>
+    blocks: Vec<'static, Character>,
+    artist: MutexGuard<'static, Artist>
 }
 
 impl Game {
@@ -80,7 +81,7 @@ impl Game {
                     (SCREEN_HEIGHT - 20 - paddle_bmp.scaled_height()).to_i16()
                 ),
                 velocity: Velocity { direction: 0, speed: 0 }
-            }, paddle_bmp
+            }, paddle_bmp.convert_to_scaled_bitmap()
         );
         let ball_char = Character::new(Object {
                 pos: Point(
@@ -88,7 +89,7 @@ impl Game {
                     paddle_char.object.pos.y() - ball_bmp.scaled_height().to_i16()
                 ),
                 velocity: Velocity { direction: 0, speed: 0 }
-            }, ball_bmp
+            }, ball_bmp.convert_to_scaled_bitmap()
         );
         Self {
             ball_char,
@@ -98,7 +99,8 @@ impl Game {
             shutdown_attempted: false,
             paused_msg_has_been_drawn: false,
             background: Color::new(Color::Purple),
-            blocks: Self::generate_blocks()
+            blocks: Self::generate_blocks(),
+            artist: artist::get_artist().lock()
         }
     }
 
@@ -109,21 +111,21 @@ impl Game {
                     KeyCode::ArrowRight => {
                         if self.has_started && direction == KeyDirection::Down {
                             if !paddle_collided_with_right_wall(&self.paddle_char) {
-                                self.move_paddle(PaddleDirection::Right);
+                                self.move_paddle_in_double_buffer(PaddleDirection::Right);
                             }
                         }
                     }
                     KeyCode::ArrowLeft => {
                         if self.has_started && direction == KeyDirection::Down {
                             if !paddle_collided_with_left_wall(&self.paddle_char) {
-                                self.move_paddle(PaddleDirection::Left);
+                                self.move_paddle_in_double_buffer(PaddleDirection::Left);
                             }
                         }
                     }
                     KeyCode::Enter => {
                         if !self.has_started {
                             self.ball_char.object.velocity.direction = self.generate_direction();
-                            self.ball_char.object.velocity.speed = 7;
+                            self.ball_char.object.velocity.speed = 5;
                             self.has_started = true;
                         } else if self.paused {
                             self.paused = false;
@@ -145,38 +147,38 @@ impl Game {
                 };
             }
         }));
-        let mut artist = artist::get_artist().lock();
-        self.draw_game_in_double_buffer(&mut artist);
-        artist.draw_on_screen_from_double_buffer();
-        artist.reset_writing_pos();
+        self.artist.draw_background_in_double_buffer(&self.background);
+        self.draw_game_in_double_buffer();
+        self.artist.draw_on_screen_from_double_buffer();
+        self.artist.reset_writing_pos();
         loop {
             if !self.has_started && !self.paused {
-                artist.write_str("Press enter to start");
-                artist.reset_writing_pos();
+                self.artist.write_str("Press enter to start\n");
+                self.artist.reset_writing_pos();
                 continue;
             }
             if self.paused {
                 if self.shutdown_attempted {
-                    artist.write_str("Shut down your computer yourself");
-                    artist.reset_writing_pos();
+                    self.artist.write_str("Shut down your computer yourself");
+                    self.artist.reset_writing_pos();
                 } else {
                     if !self.paused_msg_has_been_drawn {
-                        self.draw_game_in_double_buffer(&mut artist);
-                        artist.draw_on_screen_from_double_buffer();
-                        artist.write_str("Paused\n");
-                        artist.write_str("Press enter to continue\n");
-                        artist.write_str("Press x to exit");
-                        artist.reset_writing_pos();
+                        self.draw_game_in_double_buffer();
+                        self.artist.draw_on_screen_from_double_buffer();
+                        self.artist.write_str("Paused\n");
+                        self.artist.write_str("Press enter to continue\n");
+                        self.artist.write_str("Press x to exit\n");
+                        self.artist.reset_writing_pos();
                         self.paused_msg_has_been_drawn = true
                     }
                 }
                 continue;
             }
             if self.blocks.len() == 0 {
-                artist.write_str("You win\n");
-                artist.write_str("Press y to play again\n");
-                artist.write_str("Press esc to exit");
-                artist.reset_writing_pos();
+                self.artist.write_str("You win\n");
+                self.artist.write_str("Press y to play again\n");
+                self.artist.write_str("Press esc to exit\n");
+                self.artist.reset_writing_pos();
                 break;
             }
             if ball_collided_with_left_wall(&self.ball_char) {
@@ -193,16 +195,20 @@ impl Game {
                 self.ball_char.object.velocity.reflect_about_x_axis();
             } else if ball_is_off_screen(&self.ball_char) {
                 use core::fmt::Write;
-                artist.write_str("Game over\n");
-                artist.write_str("Press y to play again\n");
-                artist.write_str("Press esc to exit");
+                self.artist.write_str("Game over\n");
+                self.artist.write_str("Press y to play again\n");
+                self.artist.write_str("Press esc to exit");
                 break;
             }
-            for (i, block_char) in self.blocks.iter().enumerate() {
+            for i in 0..self.blocks.len() {
+                let block_char = &self.blocks[i];
                 if self.ball_char.collided_with(block_char).0 {
+                    self.artist.erase_scaled_bitmap_from_double_buffer(&block_char.repr, block_char.object.pos, &self.background);
                     self.ball_char.object.velocity.reflect_about_x_axis();
                     self.blocks.remove(i);
                     break;
+                } else {
+                    //self.artist.draw_scaled_bitmap_in_double_buffer(block_char.object.pos, &block_char.repr);
                 }
             }
             let old_pos = self.ball_char.object.update_pos(1, X_SCALE, Y_SCALE);
@@ -210,20 +216,22 @@ impl Game {
             if ball_passed_through_paddle {
                 self.ball_char.object.pos = point_at_paddle_level_opt.unwrap();
             }
-            self.draw_game_in_double_buffer(&mut artist);
-            artist.draw_on_screen_from_double_buffer();
+            self.artist.move_scaled_bitmap_in_double_buffer(&self.ball_char.repr, old_pos, self.ball_char.object.pos, &self.background);
+            self.draw_game_in_double_buffer();
+            self.artist.draw_on_screen_from_double_buffer();
         }
-        core::mem::drop(artist);
+        //core::mem::drop(artist);
         event_hook::unhook_event(game_hook, EventKind::Keyboard).unwrap();
     }
 
-    fn move_paddle(&mut self, direction: PaddleDirection) {
+    fn move_paddle_in_double_buffer(&mut self, direction: PaddleDirection) {
         let diff = match direction {
             PaddleDirection::Left => Point(-4 * X_SCALE.to_i16(), 0),
             PaddleDirection::Right => Point(4 * X_SCALE.to_i16(), 0)
         };
         let old_pos = self.paddle_char.object.pos;
         self.paddle_char.object.pos += diff;
+        self.artist.move_scaled_bitmap_in_double_buffer(&self.paddle_char.repr, old_pos, self.paddle_char.object.pos, &self.background);
     }
 
     fn generate_blocks() -> Vec<'static, Character> {
@@ -254,7 +262,7 @@ impl Game {
                 let block = Character::new(Object {
                     pos: Point(x.to_i16(), y.to_i16()),
                     velocity: Velocity { direction: 0, speed: 0 }
-                }, block_bmps[i]);
+                }, block_bmps[i].convert_to_scaled_bitmap());
                 blocks.push(block);
                 i = (i + 1) % block_bmps.len();
             }
@@ -265,6 +273,8 @@ impl Game {
     /// Returns an angle in degrees that can be used for an initial angle
     /// for the ball movement in the game
     fn generate_direction(&self) -> usize {
+        return 220;
+        /*
         // The current time is random enough for this purpose
         let time = cmos::get_current_time();
         // Adding 180 because the initial direction can't be anything
@@ -280,20 +290,15 @@ impl Game {
         } else {
             direction
         }
+        */
     }
 
-    fn draw_game_in_double_buffer(&self, artist: &mut MutexGuard<Artist>) {
-        let a = get_allocator();
-        artist.draw_background_in_double_buffer(&self.background);
-        let a = get_allocator();
-        artist.draw_bitmap_in_double_buffer(self.paddle_char.object.pos, &self.paddle_char.repr);
-        let a = get_allocator();
+    fn draw_game_in_double_buffer(&mut self) {
+        self.artist.draw_scaled_bitmap_in_double_buffer(self.paddle_char.object.pos, &self.paddle_char.repr);
         for block_char in self.blocks.iter() {
-            artist.draw_bitmap_in_double_buffer(block_char.object.pos, &block_char.repr);
+            self.artist.draw_scaled_bitmap_in_double_buffer(block_char.object.pos, &block_char.repr);
         }
-        let a = get_allocator();
-        artist.draw_bitmap_in_double_buffer(self.ball_char.object.pos, &self.ball_char.repr);
-        let a = get_allocator();
+        self.artist.draw_scaled_bitmap_in_double_buffer(self.ball_char.object.pos, &self.ball_char.repr);
     }
 }
 
@@ -354,13 +359,13 @@ fn ball_passed_through_paddle(old_pos: Point, new_pos: Point, direction: usize, 
 struct Character {
     /// The physical definition of the character?
     object: Object,
-    repr: Bitmap,
+    repr: ScaledBitmap,
     visibility: Visibility
 }
 
 impl Character {
     /// Creates a new character with a default visibility of visible
-    fn new(object: Object, repr: Bitmap) -> Self {
+    fn new(object: Object, repr: ScaledBitmap) -> Self {
         Self {
             object,
             repr,

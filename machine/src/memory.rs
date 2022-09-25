@@ -681,7 +681,7 @@ impl fmt::Debug for EFIMemRegion {
 /// UEFI spec, version 2.7, chapter 7, section 2
 #[derive(Debug, Clone)]
 #[repr(u8)]
-enum EFIMemRegionType {
+pub enum EFIMemRegionType {
     /// Unavailable for use
     Reserved = 0,
     /// The app code

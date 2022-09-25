@@ -36,13 +36,10 @@ const APP_STACK_SIZE: u64 = Mem!(10, Mib);
 
 const APP_HEAP_SIZE: u64 = Mem!(10, Mib);
 
-fn setup_memory_and_run_game(mut mem_allocator: MemAllocator) -> ! {
-    let stack_mem = mem_allocator.alloc_mem(MemRegionType::AppStack, APP_STACK_SIZE)
-        .expect("Couldn't allocate memory for the stack");
-    let heap_mem = mem_allocator.alloc_mem(MemRegionType::Heap, APP_HEAP_SIZE)
-        .expect("Couldn't allocate memory for the heap");
-
-    // Saving values on the stack in registers so they can be used later
+fn setup_memory_and_run_game(stack_mem: MemChunk, heap_mem: MemChunk) -> ! {
+    
+    // Changing the stack pointer
+    // Need to save heap_mem so it can be used later
     unsafe {
         asm!("
             mov rdi, {}
