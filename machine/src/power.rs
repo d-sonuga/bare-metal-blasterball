@@ -2,6 +2,11 @@ use core::slice;
 use core::mem;
 use crate::port::{Port, PortReadWrite};
 
+use crate::memory::Addr;
+use sync::once::Once;
+
+pub static FRAMEBUFFER: Once<Addr> = Once::new();
+
 /// Shuts down the computer
 ///
 /// If it's successful, the Ok(()) will never be returned
@@ -75,7 +80,7 @@ pub unsafe fn shutdown() -> Result<(), ()> {
 /// The Root System Description Pointer (RSDP) contains the info
 /// used to find the RSDT
 #[derive(Debug, PartialEq)]
-enum RSDP {
+pub enum RSDP {
     V1(&'static RSDPDescriptorV1),
     V2(&'static RSDPDescriptorV2),
     None
@@ -106,7 +111,7 @@ impl RSDP {
 
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct RSDPDescriptorV1 {
+pub struct RSDPDescriptorV1 {
     signature: [u8; 8],
     checksum: u8,
     oemid: [u8; 6],
@@ -135,7 +140,7 @@ impl RSDPDescriptorV1 {
 
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct RSDPDescriptorV2 {
+pub struct RSDPDescriptorV2 {
     first_part: RSDPDescriptorV1,
     length: u8,
     xsdt_address: u64,
@@ -168,6 +173,7 @@ const RSDP_SIGNATURE: &[u8; 8] = b"RSD PTR ";
 /// or in the memory region from 0x000E0000 to 0x000FFFFF
 ///
 /// To find it, the string "RSD PTR " has to be found in one of the two areas
+#[cfg(feature = "bios")]
 unsafe fn detect_rsdp() -> Option<RSDP> {
     let ebda = 0x9fc00 as *const u8;
     let mut rsdp = Some(RSDP::None);
@@ -188,6 +194,46 @@ unsafe fn detect_rsdp() -> Option<RSDP> {
         }
     }
     rsdp
+}
+
+#[cfg(not(feature = "bios"))]
+pub unsafe fn detect_rsdp() -> Option<RSDP> {
+    use crate::uefi::{get_systable, EFIConfigurationTableEntry, Guid};
+    // The GUID of the RSDP structure in ACPI 1.0 according to the ACPI
+    // specification 6.2, section 5.2.5.2
+    const ACPI_1_RSDP_GUID: Guid = Guid {
+        first: 0xeb9d2d30,
+        second: 0x2d88,
+        third: 0x11d3,
+        fourth: [0x9a, 0x16, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d]
+    };
+    // The GUID of the RSDP structure in ACPI 2.0
+    const ACPI_2_RSDP_GUID: Guid = Guid {
+        first: 0x8868e871,
+        second: 0xe4f1,
+        third: 0x11d3,
+        fourth: [0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81]
+    };
+    let systable = get_systable();
+    if systable.is_none() {
+        return None;
+    }
+    let systable = systable.unwrap();
+    let no_of_entries = systable.no_of_entries_in_config_table();
+    let config_table = systable.config_table() as *const EFIConfigurationTableEntry;
+    for i in 0..no_of_entries as isize {
+        let entry_ptr = config_table.offset(i);
+        let entry = entry_ptr.read();
+        if entry.vendor_guid == ACPI_1_RSDP_GUID {
+            let rsdp = entry_ptr.read().vendor_table as *mut RSDPDescriptorV1;
+            return Some(RSDP::V1(&*rsdp));
+        }
+        if entry.vendor_guid == ACPI_2_RSDP_GUID {
+            let rsdp = entry_ptr.read().vendor_table as *mut RSDPDescriptorV2;
+            return Some(RSDP::V2(&*rsdp));
+        }
+    }
+    None
 }
 
 trait SDTTable {
@@ -400,4 +446,92 @@ unsafe fn get_acpi_version(rsdp_ptr: *const RSDPDescriptorV1) -> Option<ACPIVers
 enum ACPIVersion {
     One,
     Other
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::fmt;
+use::core::fmt::Write;
+const FONT_WIDTH: usize = 8;
+const FONT_HEIGHT: usize = 8;
+const X_SCALE: usize = 2;
+const Y_SCALE: usize = 2;
+const SCREEN_HEIGHT: usize = 480;
+const SCREEN_WIDTH: usize = 640;
+#[repr(C)]
+struct Color {
+    blue: u8,
+    green: u8,
+    red: u8,
+    _r: u8
+}
+static X_POS: AtomicUsize = AtomicUsize::new(0);
+static Y_POS: AtomicUsize = AtomicUsize::new(0);
+use crate::font;
+
+// Can only be used after setting up the graphics mode
+// and initializing the framebuffer
+pub struct Printer;
+impl fmt::Write for Printer {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for c in s.bytes() {
+            Printer.print_char(c);
+        }
+        Ok(())
+    }
+}
+use crate::pic8259::is_printable_ascii;
+// Quick and dirty printing
+impl Printer {
+    pub fn print_char(&mut self, c: u8) {
+        let framebuffer = FRAMEBUFFER.get().unwrap().as_mut_ptr();
+        let mut vga = framebuffer as *mut Color;
+        let curr_x = X_POS.load(Ordering::Relaxed);
+        let curr_y = Y_POS.load(Ordering::Relaxed);
+        if c == b'\n' {
+            X_POS.store(0, Ordering::Relaxed);
+            let old_y = Y_POS.load(Ordering::Relaxed);
+            Y_POS.store(old_y + FONT_HEIGHT * Y_SCALE, Ordering::Relaxed);
+        } else if is_printable_ascii(c) {
+            for (y, byte) in font::FONT[c].iter().enumerate() {
+                let i = y + 1;
+                for yp in y * Y_SCALE..i*Y_SCALE {
+                    for x in 0..FONT_WIDTH {
+                        let j = x + 1;
+                        for xp in x * X_SCALE..j * X_SCALE {
+                            unsafe {
+                                if byte & (1 << (FONT_WIDTH - x - 1)) == 0 {
+                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = Color { blue: 0, green: 255, red: 255, _r: 0};
+                                } else {
+                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = Color { blue: 0, green: 0, red: 0, _r: 0};
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            X_POS.store(curr_x + FONT_WIDTH * X_SCALE, Ordering::Relaxed);
+            if X_POS.load(Ordering::Relaxed) >= SCREEN_WIDTH {
+                X_POS.store(0, Ordering::Relaxed);
+                Y_POS.store(curr_y + FONT_HEIGHT * Y_SCALE, Ordering::Relaxed);
+            }
+        } else {
+            self.print_char(b'?');
+        }
+    }
 }
