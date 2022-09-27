@@ -4,6 +4,8 @@ use core::{fmt, mem};
 use core::arch::asm;
 use num::Integer;
 use crate::{DescriptorTablePointer, tss::TaskStateSegment, Addr};
+use core::fmt::Write;
+use crate::printer::Printer;
 
 /// A self-imposed limit on the number of entries that should be in the GDT
 const GDT_MAX_ENTRY_SIZE: usize = 8;
@@ -86,6 +88,10 @@ impl Descriptor {
     pub fn tss_segment(tss: &'static TaskStateSegment) -> Descriptor {
         let tss_ptr = tss as *const _ as u64;
         let mut high = 0;
+        use core::fmt::Write;
+        use crate::printer::Printer;
+        //writeln!(Printer, "tss_ptr: 0x{:x}, tss_ptr (0..24): {:?}", tss_ptr, tss_ptr.get_bits(0..24));
+        //loop {}
         high.set_bits(0..32, tss_ptr.get_bits(32..64), 0);
 
         let mut low = DescriptorFlags::PRESENT;
@@ -151,14 +157,14 @@ impl fmt::Debug for SegmentSelector {
 }
 
 pub trait SegmentRegister {
-    unsafe fn set_reg(selector: SegmentSelector);
+    unsafe fn set(&self, selector: SegmentSelector);
 }
 
 /// Representation of the Code Segment register
 pub struct CS;
 
 impl SegmentRegister for CS {
-    unsafe fn set_reg(selector: SegmentSelector) {
+    unsafe fn set(&self, selector: SegmentSelector) {
         asm!(
             "push {sel}",
             "lea {tmp}, [1f + rip]",
@@ -175,12 +181,15 @@ impl SegmentRegister for CS {
 pub struct DS;
 
 impl SegmentRegister for DS {
-    unsafe fn set_reg(selector: SegmentSelector) {
-        asm!(
-            "mov ds, {0:x}",
-            in(reg) selector.0,
-            options(nostack, preserves_flags)
-        );
+    unsafe fn set(&self, selector: SegmentSelector) {
+        asm!("mov ds, ax", in("ax") selector.0);
     }
 }
 
+pub struct SS;
+
+impl SegmentRegister for SS {
+    unsafe fn set(&self, selector: SegmentSelector) {
+        asm!("mov ss, {}", in(reg) selector.0);
+    }
+}

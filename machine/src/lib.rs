@@ -15,6 +15,9 @@ pub mod power;
 pub mod cmos;
 pub mod uefi;
 pub mod keyboard;
+pub mod acpi;
+pub mod apic;
+mod printer;
 mod font;
 
 use memory::Addr;

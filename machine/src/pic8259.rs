@@ -2,6 +2,10 @@
 
 use crate::port::{Port, PortReadWrite};
 use crate::port::consts::WAIT_PORT_NO;
+use core::fmt::Write;
+use crate::printer::Printer;
+use num::Integer;
+use core::arch::asm;
 
 /// Command issued at the end of an interrupt routine
 const END_OF_INTERRUPT: u8 = 0x20;
@@ -67,33 +71,32 @@ impl Pics {
     
     /// Handles the remapping of the PICs to the offsets
     pub fn init(&mut self) {
-        /*let mut x: u32;
-        use core::arch::asm;
-        unsafe {
-            asm!("
-                mov ecx, 0x1b
-                rdmsr
-                mov edi, eax",
-                out("edi") x
-            );
-        }
-        use num::Integer;
-        //writeln!(Printer, "The msr: {:b}", x);
-        x.unset_bit(11);
-        unsafe {
-            asm!("
-                mov edx, 0
-                mov eax, edi
-                mov ecx, 0x1b
-                wrmsr
-            ", in("edi") x);
-        }*/
-        //loop {}
         // Saving original interrupt masks
         let original_masks = self.read_masks();
         
         let mut wait_port: Port<u8> = Port::new(WAIT_PORT_NO);
         let mut wait = || wait_port.write(0);
+
+        let mut x: u32;
+    unsafe {
+        asm!("
+            mov ecx, 0x1b
+            rdmsr
+            mov edi, eax",
+            out("edi") x
+        );
+    }
+    x.unset_bit(11, 90909090);
+    unsafe {
+        asm!("
+            mov edx, 0
+            mov eax, edi
+            mov ecx, 0x1b
+            wrmsr
+        ", in("edi") x);
+    }
+        //writeln!(Printer, "{:x} {:x}", original_masks.0, original_masks.1);
+        //loop {}
 
         // Start the initialization sequence by sending
         self.primary.command.write(CMD_INIT);
@@ -122,7 +125,9 @@ impl Pics {
         wait();
 
         // Restore the masks
-        self.write_masks(original_masks.0, original_masks.1);
+        //self.write_masks(original_masks.0, original_masks.1);
+        // Receive interrupts from only the keyboard and timer
+        self.write_masks(0xfd, 0xff);
     }
 
     /// Reads the interrupt masks of the PICs
@@ -146,7 +151,7 @@ fn handles_interrupt(irq: u8, pic: Pic) -> bool {
 
 
 
-
+/*
 const FONT_WIDTH: usize = 8;
 const FONT_HEIGHT: usize = 8;
 const SCREEN_WIDTH: usize = 640;
@@ -235,7 +240,7 @@ impl Printer {
         }
     }
 }
-
+*/
 pub fn is_printable_ascii(c: u8) -> bool {
     match c {
         b' '..=b'~' => true,

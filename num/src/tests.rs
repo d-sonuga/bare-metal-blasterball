@@ -36,14 +36,13 @@ fn test_get_set_bits(){
 
     let mut n = 0b11011u32;
     assert_eq!(0b110, n.get_bits(2..5));
+
+    let n = 0x140048020u64;
+    assert_eq!(n.get_bits(24..32), 64);
 }
 
 #[test]
 fn test_cast() {
-    assert_eq!(1.0f32.to_usize(), 1usize);
-    assert_eq!(3.9f64.to_usize(), 4usize);
-    assert_eq!(100.5f64.to_usize(), 101usize);
-    assert_eq!(0.0f32.to_usize(), 0usize);
     assert_eq!(12.0f32.to_i16(), 12i16);
     assert_eq!(-1.0f32.to_i16(), -1i16);
     assert_eq!(32i16.to_usize(), 32usize);

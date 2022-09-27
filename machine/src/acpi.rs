@@ -1,4 +1,5 @@
 use core::{mem, slice};
+use core::iter::Iterator;
 
 /// The Root System Description Pointer (RSDP) contains the info
 /// used to find the RSDT
@@ -415,6 +416,22 @@ impl MADT {
         let entries_start_ptr = (self as *const Self as *const u8).offset(SDT_HEADER_SIZE as isize);
         slice::from_raw_parts(entries_start_ptr, size_of_entries)
     }*/
+    pub fn flags(&self) -> MultipleAPICFlags {
+        self.flags
+    }
+
+    pub fn interrupt_controllers(&self) -> InterruptControllersIter {
+        let start_ptr = unsafe { (self as *const _ as *mut u8).offset((SDT_HEADER_SIZE + core::mem::size_of::<u32>() + mem::size_of::<MultipleAPICFlags>()) as isize) };
+        InterruptControllersIter {
+            start_ptr,
+            entries_size: self.header.length as usize - SDT_HEADER_SIZE,
+            curr_entry_ptr: start_ptr
+        }
+    }
+
+    pub fn local_interrupt_controller_addr(&self) -> u32 {
+        self.local_interrupt_controller_addr
+    }
 }
 
 impl SDTTable for MADT {
@@ -424,15 +441,16 @@ impl SDTTable for MADT {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-struct MultipleAPICFlags(u32);
+pub struct MultipleAPICFlags(u32);
 
 impl MultipleAPICFlags {
     /// A one in bit 0 indicates that the system also has a PC-AT-compatible
     /// dual-8259 setup.
     /// The 8259 vectors must be disabled (that is,
     /// masked) when enabling the ACPI APIC operation.
-    fn pc_at_compatible(&self) -> bool {
+    pub fn pc_at_compatible(&self) -> bool {
         self.0 & 0x1 == 1
     }
 }
@@ -440,9 +458,36 @@ impl MultipleAPICFlags {
 /// An entry in the MADT that describe the interrupt features
 /// of the machine
 #[repr(C)]
-struct InterruptController {
+pub struct InterruptController {
     type_: u8,
     length: u8
 }
 
+impl InterruptController {
+    pub fn type_(&self) -> u8 {
+        self.type_
+    }
+}
+
 type ACPITableSig = &'static [u8; 4];
+
+pub struct InterruptControllersIter {
+    start_ptr: *const u8,
+    entries_size: usize,
+    curr_entry_ptr: *const u8
+}
+
+impl Iterator for InterruptControllersIter {
+    type Item = &'static InterruptController;
+    fn next(&mut self) -> Option<Self::Item> {
+        if (self.curr_entry_ptr as usize - self.start_ptr as usize) as usize >= self.entries_size {
+            None
+        } else {
+            let ptr = self.curr_entry_ptr.cast::<InterruptController>();
+            let curr_entry_len = unsafe { ptr.read().length } as isize;
+            assert!(curr_entry_len != 0);
+            self.curr_entry_ptr = unsafe { self.curr_entry_ptr.offset(curr_entry_len) };
+            unsafe { Some(&*ptr) }
+        }
+    }
+}

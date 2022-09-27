@@ -1,8 +1,8 @@
-use core::ffi::c_void;
+use core::ffi::c_void;use machine::power::FRAMEBUFFER;
 use core::{ptr, mem};
 use core::ops::BitOr;
 use machine::keyboard::uefi::{EFIInputKey, EFIKeyData, EFIKeyToggle};
-use machine::memory::{Addr, EFIMemMapDescriptor, EFIMemRegion, MemMap, MemAllocator, EFIMemRegionType, MemChunk};
+use machine::memory::{Addr, EFIMemMapDescriptor, EFIMemRegion, MemMap, MemAllocator, EFIMemRegionType, MemChunk, MemRegionType};
 use machine::uefi;
 use machine::uefi::{EFIEventType, EFITpl, EFIEvent, EFITimerType, EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID};
 use event_hook;
@@ -12,22 +12,30 @@ use machine::keyboard::{KeyDirection, KeyCode, KeyModifiers, KeyEvent};
 use num::Integer;
 use sync::mutex::Mutex;
 use sync::once::Once;
+use crate::{APP_STACK_SIZE, APP_HEAP_SIZE};
 use crate::{setup_memory_and_run_game};
 
 
-static FRAMEBUFFER: Once<Addr> = Once::new();
+//static FRAMEBUFFER: Once<Addr> = Once::new();
 
 machine::efi_entry_point!(main);
 
 
-fn main() -> ! {
+fn main(image_handle: machine::uefi::EFIHandle) -> ! {
     let systable = uefi::get_systable().unwrap();
     let stdout = systable.stdout();
     stdout.clear_screen();
 
     let framebuffer = init_graphics().unwrap();
     init_framebuffer(framebuffer);
-    
+
+    let boot_services = systable.boot_services();
+
+    let stack_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_STACK_SIZE as usize).unwrap();
+    let heap_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_HEAP_SIZE as usize).unwrap();
+    let mut mmap = boot_services.exit_boot_services(image_handle).unwrap();
+
+    /*
     extern "efiapi" fn notify_keypress_fn(event: EFIEvent, context: *mut c_void) {
         let systable = uefi::get_systable().unwrap();
         let mut stdin = systable.stdin();
@@ -48,10 +56,32 @@ fn main() -> ! {
         EFITpl::Notify,
         notify_keypress_fn
     ).unwrap();
-    boot_services.set_timer(event, EFITimerType::Periodic, 1).unwrap();
+    boot_services.set_timer(event, EFITimerType::Periodic, 100).unwrap();
     boot_services.signal_event(event).unwrap();
 
     let (stack_mem, heap_mem) = alloc_game_mem().unwrap();
+    setup_memory_and_run_game(stack_mem, heap_mem);*/
+
+    
+    /*let mut mem_allocator = MemAllocator::new(&mut mmap);
+    let stack_mem = mem_allocator.alloc_mem(MemRegionType::AppStack, APP_STACK_SIZE)
+        .expect("Couldn't allocate memory for the stack");
+    let heap_mem = mem_allocator.alloc_mem(MemRegionType::Heap, APP_HEAP_SIZE)
+        .expect("Couldn't allocate memory for the heap");*/
+    /*unsafe {
+    use machine::acpi;
+    use machine::acpi::SDTTable;
+    let rsdp = acpi::detect_rsdp().unwrap();
+    let rsdt = &*rsdp.rsdt_ptr();
+    let madt = rsdt.find_madt().unwrap();*/
+    //assert!(madt.is_valid(), "MADT is invalid");
+    //writeln!(Printer, "Found the MADT");
+    //writeln!(Printer, "{:?}", madt.flags().pc_at_compatible());
+    //for controller in madt.interrupt_controllers() {
+        //write!(Printer, "{:?}    ", controller.type_());
+    //}
+    //loop {}
+    //}
     setup_memory_and_run_game(stack_mem, heap_mem);
     loop {}
 }

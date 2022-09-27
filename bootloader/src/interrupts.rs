@@ -1,7 +1,7 @@
 use core::fmt::Write;
 use machine::interrupts::{InterruptDescriptorTable, InterruptStackFrame};
 use machine::pic8259::Pics;
-use machine::instructions::interrupts::enable as enable_interrupts;
+use machine::instructions::interrupts::{enable as enable_interrupts, disable as disable_interrupts};
 use machine::keyboard::Keyboard;
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
@@ -20,7 +20,9 @@ lazy_static! {
         let mut idt = InterruptDescriptorTable::new();
         idt.double_fault.set_handler(double_fault_handler)
             .set_ist_stack_index(DOUBLE_FAULT_IST_INDEX);
+        idt.page_fault.set_handler(page_fault_handler);
         idt.general_protection_fault.set_handler(general_protection_fault_handler);
+        idt.brkpoint.set_handler(brkpoint_interrupt_handler);
         idt[InterruptIndex::Timer.as_usize()].set_handler(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler(keyboard_interrupt_handler);
         idt
@@ -51,13 +53,21 @@ impl InterruptIndex {
 }
 
 pub fn init(){
+    use core::fmt::Write;
+    //use crate::uefi::Printer;
+    disable_interrupts();
     IDT.load();
     PICS.lock().init();
     enable_interrupts();
 }
 
+extern "x86-interrupt" fn brkpoint_interrupt_handler(sf: InterruptStackFrame) {
+    panic!("In the breakpoint");
+    //loop {}
+}
+
 extern "x86-interrupt" fn page_fault_handler(sf: InterruptStackFrame, err_code: u64) {
-    panic!("greetings from the page fault handler");
+    panic!("Page Fault\nErr Code: {}\n{:?}", err_code, sf);
     loop {}
 }
 
@@ -72,6 +82,8 @@ extern "x86-interrupt" fn timer_interrupt_handler(sf: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
+    use crate::uefi::Printer;
+    writeln!(Printer, "In the keyboard");
     use machine::port::{Port, PortReadWrite};
     let port: Port<u8> = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
@@ -83,6 +95,8 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(sf: InterruptStackFrame, err_code: u64) {
-    panic!("greetings from the general protection fault handler");
+    //use crate::uefi::Printer;
+    panic!("General Protection Fault\nErr Code: {}\n{:?}", err_code, sf);
+    //panic!("greetings from the general protection fault handler");
     loop {}
 }

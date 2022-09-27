@@ -1,5 +1,5 @@
 use machine::tss::{TaskStateSegment, load_tss};
-use machine::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector, CS, DS, SegmentRegister};
+use machine::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector, CS, DS, SegmentRegister, SS};
 use machine::memory::Addr;
 use lazy_static::lazy_static;
 
@@ -47,8 +47,9 @@ struct Selectors {
 pub fn init() {
     GDT.0.load();
     unsafe {
-        CS::set_reg(GDT.1.code_seg_selector);
-        DS::set_reg(GDT.1.data_seg_selector);
+        CS.set(GDT.1.code_seg_selector);
+        DS.set(GDT.1.data_seg_selector);
+        SS.set(GDT.1.data_seg_selector);
         load_tss(GDT.1.tss_seg_selector);
     }
 }

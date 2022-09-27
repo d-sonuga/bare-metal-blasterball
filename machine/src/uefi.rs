@@ -6,6 +6,7 @@ use core::ffi::c_void;
 use core::ptr;
 use core::fmt;
 use sync::once::Once;
+use crate::memory::{EFIMemMapDescriptor, MemMap};
 use crate::memory::{MemChunk, Addr, EFIMemRegionType, EFIMemRegion};
 use crate::keyboard::uefi::{EFIInputKey, EFIKeyData, EFIKeyToggle};
 
@@ -39,8 +40,8 @@ macro_rules! efi_entry_point {
         #[no_mangle]
         pub unsafe extern "efiapi" fn efi_main(image_handle: $crate::uefi::EFIHandle, systable: *mut $crate::uefi::EFISystemTable) -> ! {
             $crate::uefi::init_systable(systable);
-            let func: fn() -> ! = $f;
-            func()
+            let func: fn($crate::uefi::EFIHandle) -> ! = $f;
+            func(image_handle)
         }
     }
 }
@@ -124,6 +125,14 @@ impl EFISystemTable {
 
     pub fn stdout(&self) -> &'static EFISimpleTextOutputProtocol {
         unsafe { &*self.stdout }
+    }
+
+    pub fn config_table(&self) -> &'static EFIConfigurationTableEntry {
+        unsafe { &*self.configuration_table }
+    }
+
+    pub fn no_of_entries_in_config_table(&self) -> usize {
+        self.no_of_table_entries
     }
 }
 
@@ -283,12 +292,12 @@ struct EFISimpleTextInputExProtocol {
 
 /// An entry in the EFIConfigurationTable
 #[repr(C)]
-struct EFIConfigurationTableEntry {
+pub struct EFIConfigurationTableEntry {
     /// The 128-bit GUID value that uniquely identifies the system
     /// configuration table
-    vendor_guid: u128,
+    pub vendor_guid: Guid,
     /// A pointer to the table associated with vendor GUID
-    vendor_table: *const core::ffi::c_void
+    pub vendor_table: *const core::ffi::c_void
 }
 
 /// The boot services in the EFISystemTable
@@ -468,6 +477,73 @@ impl EFIBootServices {
             })
         }
     }
+
+    pub fn exit_boot_services(&self, image_handle: EFIHandle) -> Result<MemMap, &'static str> {
+        unsafe {
+        // The map_key is required to exit boot services
+        let mut map_key = 0usize;
+        let mut descriptor_size = 0usize;
+        let mut descriptor_version = 0u32;
+        let mut mem_map_size = 0usize;
+
+        // Exit boot services to gain full control of the system
+        // Get the size of buffer required to store the map in mem_map_size
+        let status = (self.get_mem_map)(
+            &mut mem_map_size,
+            ptr::null_mut(),
+            &mut map_key,
+            &mut descriptor_size,
+            &mut descriptor_version
+        );
+        if status != StatusCode::STATUS_BUFFER_TOO_SMALL | StatusCode::ERROR_BIT {
+            return Err("Not too small for some reason")
+        }
+        // mem_map_size now contains the size of the buffer needed to store the mem_map
+        // The EFI_MEMORY_TYPE as specified by the UEFI spcification
+        let pool_type = EFIMemRegionType::BootServicesData;
+        // According to the UEFI spec extra space should be allocated
+        let mut map_size = mem_map_size + 500;
+        let mut mem_map_buffer: *mut u8 = ptr::null_mut();
+        // To get the memory map, space needs to be allocated to retrieve it
+        let alloc_status = (self.alloc_mem)(
+            pool_type,
+            map_size,
+            &mut mem_map_buffer
+        );
+        if alloc_status != StatusCode::STATUS_SUCCESS {
+            return Err("Unable to allocate memory for the memory map");
+        }
+        let mut mem_map_buffer = mem_map_buffer.cast::<EFIMemRegion>();
+        let mut m = 0;
+        loop {
+            // Get the memory map
+            let status = (self.get_mem_map)(
+                &mut map_size,
+                mem_map_buffer,
+                &mut map_key,
+                &mut descriptor_size,
+                &mut descriptor_version
+            );
+            let boot_exit_status = (self.exit_boot_services)(
+                image_handle,
+                map_key
+            );
+            if boot_exit_status == StatusCode::STATUS_SUCCESS {
+                let mmap_descr = EFIMemMapDescriptor {
+                    mmap_ptr: mem_map_buffer,
+                    mmap_size: map_size,
+                    mmap_entry_size: descriptor_size
+                };
+                return Ok(MemMap::from(mmap_descr));
+                //return Ok(());
+            } else if boot_exit_status == StatusCode::ERROR_BIT | StatusCode::STATUS_INVALID_PARAMETER {
+                continue;
+            } else {
+                return Err("Unexpected boot exit status");
+            }
+        }
+        }
+    }
 }
 
 #[repr(u32)]
@@ -524,13 +600,13 @@ pub enum EFITimerType {
 }
 
 /// A unique 64-bit aligned 128-bit value used to identify protocols
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[repr(C)]
 pub struct Guid {
-    first: u32,
-    second: u16,
-    third: u16,
-    fourth: [u8; 8]
+    pub first: u32,
+    pub second: u16,
+    pub third: u16,
+    pub fourth: [u8; 8]
 }
 
 pub const EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID: Guid = Guid {

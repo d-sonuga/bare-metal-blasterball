@@ -179,10 +179,23 @@ macro_rules! impl_int {
                 assert!(range.start < Self::BIT_LENGTH);
                 assert!(range.end <= Self::BIT_LENGTH);
                 assert!(range.start < range.end);
-                assert!(value << (Self::BIT_LENGTH - (range.end - range.start))
+                /*assert!(value << (Self::BIT_LENGTH - (range.end - range.start))
                           >> (Self::BIT_LENGTH - (range.end - range.start))
                           == value
-                );
+                );*/
+                if !(value << (Self::BIT_LENGTH - (range.end - range.start))
+                          >> (Self::BIT_LENGTH - (range.end - range.start))
+                          == value) {
+                    
+                            panic!("set_bits function panicked from: {}
+                                Dump
+                                ----
+                                BIT_LENGTH: {}
+                                range_end: {}
+                                range_start: {}
+                                value: 0x{:x}
+                            ", from, Self::BIT_LENGTH, range.end, range.start, value);
+                }
                 let mask = !(
                     !0 << range.start
                     & (!0 >> (Self::BIT_LENGTH - range.end))
@@ -195,7 +208,15 @@ macro_rules! impl_int {
                 assert!(range.start < Self::BIT_LENGTH);
                 assert!(range.end <= Self::BIT_LENGTH);
                 assert!(range.start < range.end);
-                *self >> range.start & (!0 >> (Self::BIT_LENGTH - range.end))
+                //*self >> range.start << range.start
+                    //<< range.end >> range.end >> range.start
+                let right_shift = range.start as u32;
+                let left_shift = (Self::BIT_LENGTH - range.end) as u32;
+                (*self).overflowing_shr(right_shift).0
+                    .overflowing_shl(right_shift).0
+                    .overflowing_shl(left_shift).0
+                    .overflowing_shr(left_shift).0
+                    .overflowing_shr(right_shift).0
             }
 
             fn sinf32(self) -> f32 {
