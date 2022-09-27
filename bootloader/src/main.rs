@@ -60,47 +60,12 @@ fn setup_memory_and_run_game(stack_mem: MemChunk, heap_mem: MemChunk) -> ! {
     let heap_mem = unsafe { *(heap_mem_addr as *const MemChunk) };
     // It's important that the GDT is initialized before the interrupts
     // The interrupts make use of the GDT
-    //#[cfg(feature = "bios")]
-    use uefi::Printer;
-    writeln!(Printer, "pregdt");
-    //loop {}
     gdt::init();
     // The allocator must be initialized before the interrupts
-    // because the event_hooks which handle interrupts make use of
+    // because the interrupts use the event hooker which in turn uses
     // the allocator
-    writeln!(Printer, "prealloc");
     allocator::init(heap_mem);
-    //#[cfg(feature = "bios")]
-    writeln!(Printer, "preinterrupt");
-    //loop {}
     interrupts::init();
-/*
-    use uefi::Printer;
-    use core::fmt::Write;
-    unsafe {
-        use machine::acpi;
-        use machine::acpi::SDTTable;
-        let rsdp = acpi::detect_rsdp().unwrap();
-        let rsdt = &*rsdp.rsdt_ptr();
-        let madt = rsdt.find_madt().unwrap();
-        assert!(madt.is_valid(), "MADT is invalid");
-        writeln!(Printer, "Found the MADT");
-        writeln!(Printer, "{:?}", madt.flags().pc_at_compatible());
-
-        use machine::apic;
-        apic::setup_apic(madt);
-        machine::instructions::interrupts::enable();
-    }
-
-    writeln!(Printer, "Im here");*/
-//    unsafe { asm!("int3") };
-  //  loop {}
-    //let x = usize::MAX as *mut u8;
-    //unsafe { asm!("int3") };
-    //loop {}
-    //use crate::uefi::Printer;
-    //writeln!(Printer, "here1");
-    //loop {}
     blasterball::game_entry_point();
     loop {}
 }
