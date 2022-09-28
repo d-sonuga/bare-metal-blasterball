@@ -63,7 +63,7 @@ pub fn init(){
 
 extern "x86-interrupt" fn brkpoint_interrupt_handler(sf: InterruptStackFrame) {
     panic!("In the breakpoint");
-    //loop {}
+    loop {}
 }
 
 extern "x86-interrupt" fn page_fault_handler(sf: InterruptStackFrame, err_code: u64) {
@@ -82,8 +82,6 @@ extern "x86-interrupt" fn timer_interrupt_handler(sf: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
-    use crate::uefi::Printer;
-    writeln!(Printer, "In the keyboard");
     use machine::port::{Port, PortReadWrite};
     let port: Port<u8> = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
@@ -95,8 +93,6 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(sf: InterruptStackFrame, err_code: u64) {
-    //use crate::uefi::Printer;
     panic!("General Protection Fault\nErr Code: {}\n{:?}", err_code, sf);
-    //panic!("greetings from the general protection fault handler");
     loop {}
 }

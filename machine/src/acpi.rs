@@ -1,5 +1,7 @@
 use core::{mem, slice};
 use core::iter::Iterator;
+use core::fmt::Write;
+use crate::printer::Printer;
 
 /// The Root System Description Pointer (RSDP) contains the info
 /// used to find the RSDT
@@ -334,6 +336,41 @@ impl DSDT {
         *s5_obj_ptr.offset(-1) == 0x08
             || (*s5_obj_ptr.offset(-2) == 0x08 && *s5_obj_ptr.offset(-1) ==b'\\' )
             && *s5_obj_ptr.offset(4) == 12
+    }
+
+    // DefMethod
+    // MethodOp
+    // MethodFlags:= MethodOp PkgLength NameString MethodFlags TermList
+    // MethodOp == 0x14
+    pub unsafe fn figure_out_how_to_execute_the_pts_obj(&self) {
+        let start_ptr = (self as *const Self as *const u8).offset(SDT_HEADER_SIZE as isize);
+        let bytes = slice::from_raw_parts(start_ptr, self.header.length as usize - SDT_HEADER_SIZE);
+        for chunk in bytes.array_windows::<4>() {
+            if chunk == b"_PTS" {
+                writeln!(Printer, "Found the PTS control method");
+                let curr_ptr = chunk.as_slice().as_ptr().cast::<u8>();
+                let mut i = 1isize;
+                let mut j = 0;
+                loop {
+                    if j == 10 {
+                        writeln!(Printer, "Not it");
+                        break;
+                    }
+                    let byte = curr_ptr.offset(-i).read();
+                    if byte == 0x14 {
+                        writeln!(Printer, "Its the method op: 0x{:x}", byte);
+                        break;
+                    } else {
+                        writeln!(Printer, "The byte: 0x{:x}", byte);
+                        j += 1;
+                        i += 1;
+                    }
+                }
+                loop {}
+            }
+        }
+        writeln!(Printer, "Didnt find the PTS control method");
+        loop {}
     }
 }
 

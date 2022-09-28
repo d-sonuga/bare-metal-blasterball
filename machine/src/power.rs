@@ -56,6 +56,9 @@ pub unsafe fn shutdown() -> Result<(), ()> {
         // DSDT isn't valid
         return Err(())
     }
+
+    dsdt.figure_out_how_to_execute_the_pts_obj();
+
     // Shutting down requires PM1a_CTRL_BLOCK or PM1a_CTRL_BLOCK, SLP_TYPa or SLP_TYPb
     // And outw(PM1a_CTRL_BLOCK, SLP_TYPa | SLP_EN) or outw(PM1b_CTRL_BLOCK, SLP_TYPb | SLP_EN)
     // should be run to shut down

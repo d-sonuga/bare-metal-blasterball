@@ -34,54 +34,6 @@ fn main(image_handle: machine::uefi::EFIHandle) -> ! {
     let stack_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_STACK_SIZE as usize).unwrap();
     let heap_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_HEAP_SIZE as usize).unwrap();
     let mut mmap = boot_services.exit_boot_services(image_handle).unwrap();
-
-    /*
-    extern "efiapi" fn notify_keypress_fn(event: EFIEvent, context: *mut c_void) {
-        let systable = uefi::get_systable().unwrap();
-        let mut stdin = systable.stdin();
-        let key = stdin.read_key().unwrap();
-        if key.is_none() {
-            return;
-        }
-        let key = key.unwrap();
-        let key_event = KeyEvent::try_from(key);
-        if let Ok(event) = key_event {
-            event_hook::send_event(Event::Keyboard(event.keycode, event.direction, event.key_modifiers));
-        }
-    }
-
-    let boot_services = systable.boot_services();
-    let event = boot_services.create_event(
-        EFIEventType::Timer | EFIEventType::NotifySignal,
-        EFITpl::Notify,
-        notify_keypress_fn
-    ).unwrap();
-    boot_services.set_timer(event, EFITimerType::Periodic, 100).unwrap();
-    boot_services.signal_event(event).unwrap();
-
-    let (stack_mem, heap_mem) = alloc_game_mem().unwrap();
-    setup_memory_and_run_game(stack_mem, heap_mem);*/
-
-    
-    /*let mut mem_allocator = MemAllocator::new(&mut mmap);
-    let stack_mem = mem_allocator.alloc_mem(MemRegionType::AppStack, APP_STACK_SIZE)
-        .expect("Couldn't allocate memory for the stack");
-    let heap_mem = mem_allocator.alloc_mem(MemRegionType::Heap, APP_HEAP_SIZE)
-        .expect("Couldn't allocate memory for the heap");*/
-    /*unsafe {
-    use machine::acpi;
-    use machine::acpi::SDTTable;
-    let rsdp = acpi::detect_rsdp().unwrap();
-    let rsdt = &*rsdp.rsdt_ptr();
-    let madt = rsdt.find_madt().unwrap();*/
-    //assert!(madt.is_valid(), "MADT is invalid");
-    //writeln!(Printer, "Found the MADT");
-    //writeln!(Printer, "{:?}", madt.flags().pc_at_compatible());
-    //for controller in madt.interrupt_controllers() {
-        //write!(Printer, "{:?}    ", controller.type_());
-    //}
-    //loop {}
-    //}
     setup_memory_and_run_game(stack_mem, heap_mem);
     loop {}
 }
