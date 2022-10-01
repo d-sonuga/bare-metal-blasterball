@@ -22,6 +22,18 @@ const SECONDARY_PIC_DATA_PORT: u16 = 0xa1;
 /// The mode the PICs will run in
 const MODE_8086: u8 = 0x01;
 
+/// The base IDT index number of the first PIC's IRQs
+///
+/// This number was specifically chosen so that the interrupts will
+/// start immediately after the exceptions in the IDT
+pub const PIC_1_OFFSET: u8 = 32;
+
+/// The base IDT index number of the second PIC's IRQs
+///
+/// This number was specifically chosen so that the interrupts on the second
+/// PIC will start immediately after the ones in the first PIC's interrupts in the IDT
+pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
+
 /// A PIC
 #[derive(Clone, Copy)]
 struct Pic {
@@ -42,14 +54,14 @@ pub struct Pics {
 impl Pics {
 
     /// Creates a new instance of the primary and secondary PICs
-    pub const fn new(primary_offset: u8, secondary_offset: u8) -> Pics {
+    pub const fn new() -> Pics {
         let primary = Pic {
-            offset: primary_offset,
+            offset: PIC_1_OFFSET,
             command: Port::<u8>::new(PRIMARY_PIC_COMMAND_PORT),
             data: Port::<u8>::new(PRIMARY_PIC_DATA_PORT)
         };
         let secondary = Pic {
-            offset: secondary_offset,
+            offset: PIC_2_OFFSET,
             command: Port::<u8>::new(SECONDARY_PIC_COMMAND_PORT),
             data: Port::<u8>::new(SECONDARY_PIC_DATA_PORT)
         };
@@ -124,10 +136,9 @@ impl Pics {
         self.secondary.data.write(MODE_8086);
         wait();
 
-        // Restore the masks
-        //self.write_masks(original_masks.0, original_masks.1);
         // Receive interrupts from only the keyboard and timer
-        self.write_masks(0xfd, 0xff);
+        // and interrupt line 11, which is being used for sound in this project
+        self.write_masks(0xfd, 0xf3);
     }
 
     /// Reads the interrupt masks of the PICs

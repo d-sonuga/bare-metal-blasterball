@@ -21,9 +21,9 @@ use artist;
 use collections::allocator::get_allocator;
 
 mod sound;
-
+mod wav;
 pub fn game_entry_point() -> ! {
-    //unsafe { sound::figure_out_how_to_make_sounds() };
+    unsafe { sound::figure_out_how_to_make_sounds() };
     println!("Loading...");
     loop {
         //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };

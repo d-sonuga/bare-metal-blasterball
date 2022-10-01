@@ -33,4 +33,11 @@ SECTIONS {
 		_rest_of_app_end_addr = .;
 	}
 	__app_end = .;
+	. = 0x100000;
+	__sound_start = .;
+	.sound : {
+		*(.sound);
+		. = ALIGN(512);
+		__sound_end = .;
+	}
 }

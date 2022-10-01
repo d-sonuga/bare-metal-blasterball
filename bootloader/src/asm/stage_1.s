@@ -17,7 +17,8 @@ boot:
 
     mov [BOOT_DRIVE], dl
 
-    mov bx, offset start_message_16bit
+    call bios_clear_screen
+    mov bx, offset loading_msg
     call print_string16
 
 enable_a20:
@@ -154,11 +155,19 @@ print_char16:
     pop ax
     ret
 
+bios_clear_screen:
+    push ax
+    mov ah, 0
+    int 0x10
+    pop ax
+    ret
+
 
 start_message_16bit:                .asciz "Successfully started in 16-bit real mode"
 load_app_err_msg:                   .asciz "Failed to load app"
-load_rest_of_app_err_msg:           .asciz "Failed to load the rest of the bootloader"
+load_rest_of_app_err_msg:           .asciz "Failed to load the rest of the app"
 no_bios_int13h_ext_err_msg:         .asciz "No BIOS int13h extensions"
+loading_msg:                        .asciz "Loading..."
 
 BOOT_DRIVE:                 .byte 0
 

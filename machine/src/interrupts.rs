@@ -240,6 +240,22 @@ impl IndexMut<usize> for InterruptDescriptorTable {
     }
 }
 
+use crate::pic8259::PIC_1_OFFSET;
+
+impl Index<IRQ> for InterruptDescriptorTable {
+    type Output = IDTEntry<Handler>;
+
+    fn index(&self, idx: IRQ) -> &Self::Output {
+        &self.interrupts[(PIC_1_OFFSET + idx.as_u8()) as usize]
+    }
+}
+
+impl IndexMut<IRQ> for InterruptDescriptorTable {
+    fn index_mut(&mut self, idx: IRQ) -> &mut Self::Output {
+        &mut self.interrupts[(PIC_1_OFFSET + idx.as_u8()) as usize]
+    }
+}
+
 macro_rules! impl_set_handler {
     ($handler_type:ty) => {
         impl IDTEntry<$handler_type> {
@@ -289,6 +305,26 @@ impl fmt::Debug for InterruptStackFrame {
             .field("original_stack_ptr", &self.original_stack_ptr)
             .field("stack_segment", &self.stack_segment)
             .finish()
+    }
+}
+
+/// An index into the IDT specifically for regular interrupts and not exceptions
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum IRQ {
+    /// This is a hardcoded value for the PIC
+    Timer = 0,
+    /// This is a hardcoded value for the PIC
+    Keyboard = 1,
+    /// According to the info gotten from <https://os.phil-opp.com/hardware-interrupts/>,
+    /// interrupt line 11 is generally available, so it is used for sound in this
+    /// project
+    Sound = 11
+}
+
+impl IRQ {
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
     }
 }
 

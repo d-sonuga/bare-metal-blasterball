@@ -4,6 +4,52 @@
 
 stage_2:
 
+load_sounds:
+    mov word ptr [dap_buffer_segment], 0
+    mov ax, offset _app_buffer                     # Using this as a temporary buffer to make loading easier
+    mov word ptr [dap_offset_to_buffer], ax
+
+    xor eax, eax
+    xor ebx, ebx
+    mov eax, offset __sound_start
+    mov ebx, offset __sound_end
+    
+    sub ebx, eax
+    shr ebx, 9                                      # ebx now contains the total number of sectors to load
+    
+    mov ecx, offset _rest_of_app_start_addr
+    mov edx, offset __sound_start
+    sub edx, ecx
+    shr edx, 9    # The number of sectors in the rest_of_bootloader_section and the padding of 0s between the app and the sounds
+    add edx, 1                                      # Plus the first boot sector
+    
+    mov word ptr [dap_no_of_sectors], 1
+    mov word ptr [dap_lba_start], dx
+    mov edi, offset __sound_start  # Initial address where the buffered sector should be stored
+    call here
+
+load_sound_loop:
+    mov si, offset dap
+    mov ah, 0x42
+    mov dl, [BOOT_DRIVE]
+    int 0x13
+    jc load_sound_err
+    
+    mov ecx, 512 / 4                    # To move 512 bytes 4 bytes at a time
+    mov esi, offset _app_buffer
+    rep movsd [edi], [esi]
+    dec ebx                             # Number of sectors left to load
+    inc word ptr [dap_lba_start]
+
+    cmp ebx, 0
+    jne load_sound_loop
+    jmp set_target_op_mode
+
+load_sound_err:
+    mov bx, offset load_sound_err_msg
+    call print_string16
+    jmp halt
+
 set_target_op_mode:
     pushf
     mov ax, 0xec00
@@ -80,4 +126,5 @@ map_memory_fail:
 
 
 load_app_fail_err_msg:              .asciz "Failed to load app"
+load_sound_err_msg:                 .asciz "Failed to load the sounds"
 mmap_entry_count:                   .word 0

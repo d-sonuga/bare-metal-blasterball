@@ -42,6 +42,8 @@ pub extern "C" fn main() -> ! {
     let app_end: u64;
     let page_table_start: u64;
     let page_table_end: u64;
+    let sound_start: u64;
+    let sound_end: u64;
     unsafe {
         asm!("
             mov {}, mmap_entry_count
@@ -49,13 +51,17 @@ pub extern "C" fn main() -> ! {
             mov {}, offset __app_start
             mov {}, offset __app_end
             mov {}, offset __page_table_start
-            mov {}, offset __page_table_end",
+            mov {}, offset __page_table_end
+            mov {}, offset __sound_start
+            mov {}, offset __sound_end",
             out(reg) mmap_entry_count,
             out(reg) mmap_addr,
             out(reg) app_start,
             out(reg) app_end,
             out(reg) page_table_start,
-            out(reg) page_table_end
+            out(reg) page_table_end,
+            out(reg) sound_start,
+            out(reg) sound_end
         );
     }
     let mmap_entry_count = mmap_entry_count & 0xff;         // Only lower byte needed
@@ -79,6 +85,14 @@ pub extern "C" fn main() -> ! {
         region_type: MemRegionType::App
     });
 
+    let sound_start_addr = Addr::new(sound_start);
+    let sound_end_addr = Addr::new(sound_end);
+    let sound_region_range = AddrRange::new(sound_start_addr.as_u64(), sound_end_addr.as_u64() + 1);
+    mem_allocator.mark_alloc_region(MemRegion {
+        range: sound_region_range,
+        region_type: MemRegionType::App
+    });
+
     let page_table_start_addr = Addr::new(page_table_start);
     let page_table_end_addr = Addr::new(page_table_end);
     let page_table_region_range = AddrRange::new(page_table_start_addr.as_u64(), page_table_end_addr.as_u64() + 1);
@@ -93,7 +107,7 @@ pub extern "C" fn main() -> ! {
         .expect("Couldn't allocate memory for the stack");
     let heap_mem = mem_allocator.alloc_mem(MemRegionType::Heap, APP_HEAP_SIZE)
         .expect("Couldn't allocate memory for the heap");
-    setup_memory_and_run_game(stack_mem, heap_mem);
+    setup_memory_and_run_game(stack_mem, heap_mem,);
 
     loop {}
 }

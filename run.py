@@ -30,6 +30,8 @@ def run_with_uefi(base_cargo_args, base_qemu_args):
         '-s',
         #'-serial', 'tcp::666,server',
         '-net', 'none',
+        '-device', 'intel-hda',
+        #'-soundhw', '',
         #'-debugcon', 'file:debug.log',
         #'-global', 'isa-debugcon.iobase=0x402',
         '-drive', f'if=pflash,format=raw,unit=0,file={OVMF_ROOT}/OVMF_CODE.fd,readonly=on',

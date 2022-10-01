@@ -462,6 +462,14 @@ impl MemMap {
     }
 }
 
+impl Index<usize> for MemMap {
+    type Output = MemRegion;
+    fn index(&self, idx: usize) -> &Self::Output {
+        assert!(idx < MAX_MEM_MAP_SIZE);
+        &self.entries[idx]
+    }
+}
+
 pub enum MemMapError {
     /// This error is returned when an attempt to add
     /// a memory region to a full memory map has been made
