@@ -113,14 +113,14 @@ impl IDTEntryOptions {
         if present {
             self.0.set_bit(15);
         } else {
-            self.0.unset_bit(15, 777);
+            self.0.unset_bit(15);
         }
     }
 
     /// Sets an IST stack to the handler
     pub fn set_ist_stack_index(&mut self, index: u16) {
         // Hardware IST index is 1-based, that is, starts at 1
-        self.0.set_bits(0..3, index + 1, 5);
+        self.0.set_bits(0..3, index + 1);
     }
 }
 

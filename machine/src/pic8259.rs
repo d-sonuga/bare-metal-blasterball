@@ -98,7 +98,7 @@ impl Pics {
             out("edi") x
         );
     }
-    x.unset_bit(11, 90909090);
+    x.unset_bit(11);
     unsafe {
         asm!("
             mov edx, 0

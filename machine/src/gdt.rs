@@ -88,17 +88,13 @@ impl Descriptor {
     pub fn tss_segment(tss: &'static TaskStateSegment) -> Descriptor {
         let tss_ptr = tss as *const _ as u64;
         let mut high = 0;
-        use core::fmt::Write;
-        use crate::printer::Printer;
-        //writeln!(Printer, "tss_ptr: 0x{:x}, tss_ptr (0..24): {:?}", tss_ptr, tss_ptr.get_bits(0..24));
-        //loop {}
-        high.set_bits(0..32, tss_ptr.get_bits(32..64), 0);
+        high.set_bits(0..32, tss_ptr.get_bits(32..64));
 
         let mut low = DescriptorFlags::PRESENT;
-        low.set_bits(16..40, tss_ptr.get_bits(0..24), 1);
-        low.set_bits(56..64, tss_ptr.get_bits(24..32), 2);
-        low.set_bits(0..16, (mem::size_of::<TaskStateSegment>() - 1) as u64, 3);
-        low.set_bits(40..44, 0b1001, 4);
+        low.set_bits(16..40, tss_ptr.get_bits(0..24));
+        low.set_bits(56..64, tss_ptr.get_bits(24..32));
+        low.set_bits(0..16, (mem::size_of::<TaskStateSegment>() - 1) as u64);
+        low.set_bits(40..44, 0b1001);
         Descriptor::SystemSegment(low, high)
     }
 }
