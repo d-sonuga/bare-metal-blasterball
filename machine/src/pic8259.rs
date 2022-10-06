@@ -138,7 +138,8 @@ impl Pics {
 
         // Receive interrupts from only the keyboard and timer
         // and interrupt line 11, which is being used for sound in this project
-        self.write_masks(0xfd, 0xf3);
+        //self.write_masks(0xfc, 0xf3);
+        self.write_masks(0x0, 0x0);
     }
 
     /// Reads the interrupt masks of the PICs

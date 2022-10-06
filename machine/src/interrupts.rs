@@ -246,13 +246,13 @@ impl Index<IRQ> for InterruptDescriptorTable {
     type Output = IDTEntry<Handler>;
 
     fn index(&self, idx: IRQ) -> &Self::Output {
-        &self.interrupts[(PIC_1_OFFSET + idx.as_u8()) as usize]
+        &self.interrupts[idx.as_u8().as_usize()]
     }
 }
 
 impl IndexMut<IRQ> for InterruptDescriptorTable {
     fn index_mut(&mut self, idx: IRQ) -> &mut Self::Output {
-        &mut self.interrupts[(PIC_1_OFFSET + idx.as_u8()) as usize]
+        &mut self.interrupts[idx.as_u8().as_usize()]
     }
 }
 
