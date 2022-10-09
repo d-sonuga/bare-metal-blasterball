@@ -26,7 +26,6 @@ load_sounds:
     mov word ptr [dap_no_of_sectors], 1
     mov word ptr [dap_lba_start], dx
     mov edi, offset __sound_start  # Initial address where the buffered sector should be stored
-    call here
 
 load_sound_loop:
     mov si, offset dap

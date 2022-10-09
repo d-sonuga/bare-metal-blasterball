@@ -1,5 +1,5 @@
 use core::ops::Index;
-use artist::{println, WriteTarget};
+use artist::{println, WriteTarget, print};
 use machine::port::{Port, PortReadWrite};
 use machine::interrupts::IRQ;
 use machine::memory::Addr;
@@ -17,9 +17,11 @@ static CLINK: [u8; 217536] = *include_bytes!("./assets/clink.wav");
 #[link_section = ".sound"]
 static DRUM: [u8; 734028] = *include_bytes!("./assets/drum.wav");
 
+static mut CORB: Option<CORB> = None;
 static mut corb_: Option<CORB> = None;
 static mut rirb_: Option<RIRB> = None;
 
+#[no_mangle]
 pub unsafe fn figure_out_how_to_make_sounds() {
     println!("So the rust compiler won't remove it, here's a byte {:x}", MUSIC[0]);
     let hda_bus_and_device_number_opt = find_hda_bus_and_device_number();
@@ -29,75 +31,9 @@ pub unsafe fn figure_out_how_to_make_sounds() {
     let mut sound_device = hda_bus_and_device_number_opt.unwrap();
     sound_device.start();
     //sound_device.pci_config.set_interrupt_line(IRQ::Sound);
-/*
-    // Initialization from redox
-    sound_device.set_state_change_status(HDAStateChangeStatusReg(0xffff));
-    let mut ctrl = sound_device.global_control();
-    ctrl.set_controller_reset(false);
-    sound_device.set_global_control(ctrl);
-    while sound_device.global_control().controller_reset() {}
-    let mut ctrl = sound_device.global_control();
-    ctrl.set_controller_reset(true);
-    sound_device.set_global_control(ctrl);
-    while !sound_device.global_control().controller_reset() {}
-    let mut timeout = 0;
-    while timeout < 1_000_000 { timeout += 1; }
-
-    let (corb_size, rirb_size) = get_corb_rirb_sizes(&sound_device);
-    let mut corb = CORB::new(corb_size);
-    let mut rirb = RIRB::new(rirb_size);
-
-    while sound_device.corb_control().corb_dma_engine_enabled() {
-        sound_device.set_corb_control(HDACORBControlReg(0));
-    }
-    sound_device.set_corb_addr(&corb as *const _ as u64);
-    sound_device.set_corbwp(HDACORBWritePointerReg(0));
-    let mut rp = sound_device.corbrp();
-    rp.set_read_pointer_reset(true);
-    sound_device.set_corbrp(rp);
-
-    let mut ctrl = sound_device.rirb_control();
-    ctrl.enable_rirb_dma_engine(false);
-    sound_device.set_rirb_control(ctrl);
-    sound_device.set_rirb_addr(&rirb as *const _ as u64);
-    let mut wp = sound_device.rirbwp();
-    wp.reset_write_pointer();
-    sound_device.set_rirbwp(wp);
-    sound_device.set_response_interrupt_count(HDAResponseInterruptCountReg(1));
-
-    let mut ctrl = sound_device.corb_control();
-    ctrl.enable_corb_dma_engine(true);
-    sound_device.set_corb_control(ctrl);
-    let mut ctrl = sound_device.rirb_control();
-    ctrl.enable_rirb_dma_engine(true);
-    ctrl.enable_interrupt(true);
-    sound_device.set_rirb_control(ctrl);
-
-    println!("Wait 1; wp: {:?}, rp: {:?}", sound_device.corbwp().write_pointer(), sound_device.corbrp().read_pointer());
-    while sound_device.corbwp().write_pointer() != sound_device.corbrp().read_pointer() {}
-    let get_node_count_command = HDANodeCommand::get_node_count(0, 0);
-    println!("About to add command");
-        corb.add_command(get_node_count_command, &mut sound_device);
-        println!("Added get node count command");
-    println!("Current PCI status: {:b}", sound_device.pci_config.status());
-    println!("Wait 2; rp: {:?}, wp: {:?}", rirb.read_pointer, sound_device.rirbwp().write_pointer());
-    while rirb.read_pointer == sound_device.rirbwp().write_pointer().as_usize() {}
-    let node_count_resp = rirb
-        .read_next_response(&mut sound_device);
-    println!("The response: {:?}", node_count_resp);
-    // End Redox initialization
-*/
     
-    // After starting the device the addresses of the codecs
-    // are the set bit positions in the state change status register
-    let sdin_state_change_stat = sound_device.state_change_status().sdin_state_change_status();
-    let mut codec_addrs = vec!(item_type => u8, capacity => 15);
-    (0..16u8)
-        .for_each(|i| if sdin_state_change_stat.get_bit(i.into()) == BitState::Set {
-            codec_addrs.push(i);
-        });
-    println!("codec_addrs: {:?}", codec_addrs);
     
+    println!("codec_addrs: {:?}", sound_device.codec_addrs);
     /*
         let get_node_count_command = HDANodeCommand::get_node_count(codec_addrs[0], 0);
         assert!(!sound_device.immediate_response_received());
@@ -111,130 +47,274 @@ pub unsafe fn figure_out_how_to_make_sounds() {
         let resp = sound_device.immediate_response_input();
         println!("Response received: {:?}", resp);
     */
-    
-    
 
+    let mut commander = Commander::new(&sound_device);
+    commander.init();
     
-    let (corb_size, rirb_size) = get_corb_rirb_sizes(&sound_device);
-    //let mut corb = CORB::new(corb_size);
-    //let mut rirb = RIRB::new(rirb_size);
-    corb_ = Some(CORB::new(corb_size));
-    rirb_ = Some(RIRB::new(rirb_size));
-    println!("here1");
-    sound_device.init_corb(corb_.as_ref().unwrap());
-    sound_device.init_rirb(rirb_.as_ref().unwrap());
-    println!("About to enable CORB DMA engine");
-    sound_device.enable_corb_dma_engine(true);
-    println!("Enabled CORB DMA Engine");
-    sound_device.enable_rirb_dma_engine(true);
+    sound_device.discover_widgets(&mut commander);
+    println!("No of output pins: {:?}", sound_device.output_pins.len());
+    println!("No of output converters: {:?}", sound_device.output_converters.len());
     
-
-    let get_node_count_command = HDANodeCommand::get_node_count(codec_addrs[0], 0);
-    println!("About to add command");
-        corb_.as_mut().unwrap().add_command(get_node_count_command, &mut sound_device);
-        println!("Added get node count command");
-    let node_count_resp = rirb_
-        .as_mut().unwrap()
-        .read_next_response(&mut sound_device);
-    println!("Gotten response to add node count command: {:?}", node_count_resp);
-    
-    //println!("Initialized the CORB and RIRB");
-    /*for &codec_addr in codec_addrs.iter() {
-        // Gettings function group info from the root node
-        let get_node_count_command = HDANodeCommand::get_node_count(codec_addr, 0);
-        corb.add_command(get_node_count_command, &mut sound_device);
-        println!("Added get node count command");
-        let node_count_resp = rirb
-            .read_next_response(&mut sound_device)
-            .node_count_resp()
-            .unwrap();
-        println!("Gotten response to add node count command");
-        let first_func_group_id = node_count_resp.start_node_number();
-        for func_group_id in first_func_group_id..first_func_group_id + node_count_resp.number_of_nodes() {
-            // Checking if the function group is an AFG
-            let func_group_type_command = HDANodeCommand::function_group_type(codec_addr, func_group_id);
-            corb.add_command(func_group_type_command, &mut sound_device);
-            let func_group_type_resp = rirb
-                .read_next_response(&mut sound_device)
-                .func_group_type_resp()
+/*        
+        for widget_id in start_widget_id..start_widget_id + node_count_resp.number_of_nodes() {
+            let afg_widget_cap_command = HDANodeCommand::afg_widget_capabilities(codec_addr, widget_id);
+            corb.add_command(afg_widget_cap_command);
+            let widget_cap_resp = rirb
+                .read_next_response()
+                .afg_widget_capabilities_resp()
                 .unwrap();
-            println!("Function group type: {:?}", func_group_type_resp.node_type());
-            if func_group_type_resp.node_type() == HDANodeFunctionGroupType::AFG {
-                // Getting the number of widgets in the AFG
-                let get_node_count_command = HDANodeCommand::get_node_count(codec_addr, func_group_id);
-                corb.add_command(get_node_count_command, &mut sound_device);
-                let node_count_resp = rirb
-                    .read_next_response(&mut sound_device)
-                    .node_count_resp()
+            // Looking for the pin widget connected to a DAC
+            if widget_cap_resp.widget_type() != HDAAFGWidgetType::PinComplex {
+                continue;
+            }
+            // Find out if the pin is connected to a speaker
+            let get_pin_config_defaults_command = HDANodeCommand::get_pin_config_defaults(codec_addr, widget_id);
+            corb.add_command(get_pin_config_defaults_command);
+            let pin_config_defaults_resp = rirb
+                .read_next_response()
+                .get_pin_config_defaults_resp()
+                .unwrap();
+
+            ///////////
+            let pin_cap_command = HDANodeCommand::get_pin_capabilities(codec_addr, widget_id);
+            corb.add_command(pin_cap_command);
+            let resp = rirb
+                .read_next_response();
+            println!("Pin Cap: {:b}", resp.response);
+            let resp = resp.pin_capabilities_resp().unwrap();
+            println!("EA.. Cap: {:?}, Input Cap: {:?}, Output Cap: {:?}",
+            resp.eapd_capable(), resp.input_capable(), resp.output_capable());
+            //////////
+
+            if !(pin_config_defaults_resp.port_connectivity() != PortConnectivity::None
+                && pin_config_defaults_resp.default_device() == DefaultDevice::Speaker) {
+                    // Not a connected to a speaker
+                    continue;
+                }
+            println!("Found a speaker");
+            let get_conn_list_command = HDANodeCommand::get_conn_list_len(codec_addr, widget_id);
+            corb.add_command(get_conn_list_command);
+            let conn_list_len_resp = rirb
+                .read_next_response()
+                .get_conn_list_len_resp();
+            if conn_list_len_resp.is_err() { continue; }
+            let conn_list_len_resp = conn_list_len_resp.unwrap();
+            println!("Connection list length of pin: {:?}", conn_list_len_resp.conn_list_len());
+            
+            // To find the entries in the pin's connection list
+            let mut conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(4);
+            let mut no_in_batch = 4;
+            if conn_list_len_resp.long_form() {
+                conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(2);
+                no_in_batch = 2;
+            }
+            for conn_idx in conn_list_index_iter {
+                let get_conn_list_entry_command = HDANodeCommand::get_conn_list_entry(codec_addr, widget_id, conn_idx);
+                corb.add_command(get_conn_list_entry_command);
+                let get_conn_list_entry_resp = rirb
+                    .read_next_response()
+                    .get_conn_list_entry_resp(conn_list_len_resp.long_form())
                     .unwrap();
-                let start_widget_id = node_count_resp.start_node_number();
-                for widget_id in start_widget_id..start_widget_id + node_count_resp.number_of_nodes() {
-                    let afg_widget_cap_command = HDANodeCommand::afg_widget_capabilities(codec_addr, widget_id);
-                    corb.add_command(afg_widget_cap_command, &mut sound_device);
+                
+                // Looking for a DAC connected to the pin
+                for (conn_node_idx, connected_node_id) in get_conn_list_entry_resp.entries().enumerate() {
+                    let connected_node_id = connected_node_id.as_u8();
+                    let afg_widget_cap_command = HDANodeCommand::afg_widget_capabilities(codec_addr, connected_node_id.as_u8());
+                    corb.add_command(afg_widget_cap_command);
                     let widget_cap_resp = rirb
-                        .read_next_response(&mut sound_device)
+                        .read_next_response()
                         .afg_widget_capabilities_resp()
                         .unwrap();
-                    println!("Widget Type: {:?}", widget_cap_resp.widget_type());
-                    // Looking for the pin widget connected to a DAC
-                    if widget_cap_resp.widget_type() == HDAAFGWidgetType::PinComplex {
-                        // Find out if the pin is connected to a speaker
-                        let get_pin_config_defaults_command = HDANodeCommand::get_pin_config_defaults(codec_addr, widget_id);
-                        corb.add_command(get_pin_config_defaults_command, &mut sound_device);
-                        let pin_config_defaults_resp = rirb
-                            .read_next_response(&mut sound_device)
-                            .get_pin_config_defaults_resp()
+                    // The DAC connected to the pin
+                    if widget_cap_resp.widget_type() == HDAAFGWidgetType::AudioOutput {
+                        println!("Found the DAC connected to the speaker");
+
+                        // Ensure the DAC is the active input to the pin
+                        let set_conn_select_ctrl_command = HDANodeCommand::set_conn_select_ctrl(codec_addr, widget_id, conn_idx*no_in_batch + conn_node_idx.as_u8());
+                        corb.add_command(set_conn_select_ctrl_command);
+                        // The response isn't needed
+                        rirb.read_next_response();
+
+                        let music = WavFile::from(&MUSIC).unwrap();
+
+                        /*println!("Sample rate: {:?}", music.sample_rate());
+                        println!("Num of channels: {:?}", music.num_of_channels());
+                        println!("Bits per sample: {:?}", music.bits_per_sample());*/
+
+
+                        let sample_buffer = SampleBuffer::from(music.data_bytes());
+
+                        let bdl_entry = BufferDescriptorListEntry::new(sample_buffer.as_ptr(), sample_buffer.bytes_len());
+                        let bdl = BufferDescriptorList::new(bdl_entry, bdl_entry);
+                        let mut stream_descr_regs = sound_device.stream_descriptor_regs_mut(0).unwrap();
+                        stream_descr_regs.control.set_stream_number(1);
+                        stream_descr_regs.cyclic_buffer_len.set_cyclic_buffer_len(bdl.data_bytes_len());
+                        stream_descr_regs.last_valid_index.set_last_valid_index(1);
+                        stream_descr_regs.format.set_sample_base_rate(SampleBaseRate::KHz44P1);
+                        stream_descr_regs.format.set_sample_base_rate_multiple(SampleBaseRateMultiple::KHz48OrLess);
+                        stream_descr_regs.format.set_sample_base_rate_divisor(SampleBaseRateDivisor::One);
+                        stream_descr_regs.format.set_bits_per_sample(BitsPerSample::Sixteen);
+                        stream_descr_regs.format.set_number_of_channels(NumOfChannels::Two);
+                        stream_descr_regs.set_bdl_base_addr(&bdl);
+                        let mut interrupt_regs = sound_device.interrupt_regs_mut();
+                        // Clear bit to stop data block
+                        interrupt_regs.set_stream_sync_bit(0, false);
+
+                        println!("Stream reset: {:?}", stream_descr_regs.control.stream_reset());
+
+                        
+                        // Enable the speaker pin
+                        let pin_ctrl = PinControl::new()
+                            .input_enabled(true)
+                            .output_enabled(true);
+                        let pin_widget_ctrl_command = HDANodeCommand::set_pin_widget_control(codec_addr, widget_id, pin_ctrl);
+                        corb.add_command(pin_widget_ctrl_command);
+                        // The response is 0, so it isn't needed
+                        rirb.read_next_response();
+
+                        // Set up the DAC to receive input from the stream
+                        let converter_ctrl = ConverterControl::new()
+                            .stream(1)
+                            .channel(0);
+                        let converter_control_command = HDANodeCommand::set_converter_control(codec_addr, connected_node_id, converter_ctrl);
+                        corb.add_command(converter_control_command);
+                        // The response isn't needed
+                        rirb.read_next_response();
+
+                        // Fully power the DAC
+                        let set_power_command = HDANodeCommand::set_power_state(codec_addr, connected_node_id, PowerState::D0);
+                        corb.add_command(set_power_command);
+                        // The response isn't needed
+                        rirb.read_next_response();
+
+                        // Get DAC's output amplifier capabilities
+                        let get_amp_cap_command = HDANodeCommand::get_out_amp_capabilties(codec_addr, connected_node_id.as_u8());
+                        corb.add_command(get_amp_cap_command);
+                        let amp_cap = rirb
+                            .read_next_response()
+                            .amp_capabilities_resp()
                             .unwrap();
-                        println!("Port connectivity: {:?}, default device: {:?}",
-                            pin_config_defaults_resp.port_connectivity(),
-                            pin_config_defaults_resp.default_device());
-                        if pin_config_defaults_resp.port_connectivity() == PortConnectivity::FixedFuncDevice
-                            && pin_config_defaults_resp.default_device() == DefaultDevice::Speaker {
-                                println!("Found pin connected to speaker");
-                            }
-                        let get_conn_list_command = HDANodeCommand::get_conn_list_len(codec_addr, widget_id);
-                        corb.add_command(get_conn_list_command, &mut sound_device);
-                        let conn_list_len_resp = rirb
-                            .read_next_response(&mut sound_device)
-                            .get_conn_list_len_resp();
-                        if conn_list_len_resp.is_ok() {
-                            let conn_list_len_resp = conn_list_len_resp.unwrap();
-                            
-                            // To find the entries in the pin's connection list
-                            let mut conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(4);
-                            if conn_list_len_resp.long_form() {
-                                conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(2);
-                            }
-                            for conn_idx in conn_list_index_iter {
-                                let get_conn_list_entry_command = HDANodeCommand::get_conn_list_entry(codec_addr, widget_id, conn_idx);
-                                corb.add_command(get_conn_list_entry_command, &mut sound_device);
-                                let get_conn_list_entry_resp = rirb
-                                    .read_next_response(&mut sound_device)
-                                    .get_conn_list_entry_resp(conn_list_len_resp.long_form())
-                                    .unwrap();
-                                // Looking for a DAC connected to the pin
-                                for connected_node_id in get_conn_list_entry_resp.entries() {
-                                    let afg_widget_cap_command = HDANodeCommand::afg_widget_capabilities(codec_addr, connected_node_id.as_u8());
-                                    corb.add_command(afg_widget_cap_command, &mut sound_device);
-                                    let widget_cap_resp = rirb
-                                        .read_next_response(&mut sound_device)
-                                        .afg_widget_capabilities_resp()
-                                        .unwrap();
-                                    // The DAC connected to the pin
-                                    if widget_cap_resp.widget_type() == HDAAFGWidgetType::AudioOutput {
-                                        // ...
-                                    }
-                                }
-                            }
-                        }
+                        let max_amp_vol = amp_cap.offset();
+                        println!("Offset: {:?}", max_amp_vol);
+                        println!("Step size: {:?}", amp_cap.step_size());
+                        println!("Num of steps: {:?}", amp_cap.num_of_steps());
+
+                        /*//
+                        let get_amp_gain = HDANodeCommand::get_amp_gain(codec_addr, connected_node_id);
+                        corb.add_command(get_amp_gain);
+                        let resp = rirb.read_next_response().response;
+                        println!("Mute: {:?}, Gain: {:?}, ", resp.get_bit(7), resp.get_bits(0..7));
+                        //
+                        */
+
+                        // Unmute DAC amplifier
+                        let amp_gain = AmpGain::new()
+                            .mute(false)
+                            .output_amp(true)
+                            .left_amp(true)
+                            .right_amp(true)
+                            .gain(max_amp_vol);
+                        
+                        let set_amp_gain_command = HDANodeCommand::set_amp_gain(codec_addr, connected_node_id.as_u8(), amp_gain);
+                        corb.add_command(set_amp_gain_command);
+                        rirb.read_next_response();
+
+                        stream_descr_regs.control.set_stream_run(true);
+                        loop {}
+                        println!("Started a stream");
                     }
                 }
             }
         }
+*/        
+    
+    let mut pin = sound_device.output_pins[0].clone();
+    assert!(pin.num_of_inputs(&mut commander) == 1);
+    let mut dac: Option<DAC> = None;
+    for node in pin.conn_list.iter() {
+        for dac_ in sound_device.output_converters.iter() {
+            if dac_ == node {
+                // The DAC connected to the pin
+                dac = Some(*dac_);
+                break;
+            }
+        }
+    }
+    let mut dac = dac.unwrap();
+
+    let music = WavFile::from(&MUSIC).unwrap();
+    let sample_buffer = SampleBuffer::from(music.data_bytes());
+
+    let bdl_entry = BufferDescriptorListEntry::new(sample_buffer.as_ptr(), sample_buffer.bytes_len());
+    let bdl_entry = BufferDescriptorListEntry {
+        addr: music.data_bytes().as_ptr().cast::<SampleBuffer>(),
+        len: music.data_bytes().len().as_u32(),
+        interrupt_on_completion: InterruptOnCompletion::new()
+    };
+    let bdl = BufferDescriptorList::new(bdl_entry, bdl_entry);
+    let mut stream_descr_regs = sound_device.stream_descriptor_regs_mut(0).unwrap();
+    stream_descr_regs.control.set_stream_number(1);
+    stream_descr_regs.cyclic_buffer_len.set_cyclic_buffer_len(bdl.data_bytes_len());
+    stream_descr_regs.last_valid_index.set_last_valid_index(1);
+    stream_descr_regs.format.set_sample_base_rate(SampleBaseRate::KHz44P1);
+    stream_descr_regs.format.set_sample_base_rate_multiple(SampleBaseRateMultiple::KHz48OrLess);
+    stream_descr_regs.format.set_sample_base_rate_divisor(SampleBaseRateDivisor::One);
+    stream_descr_regs.format.set_bits_per_sample(BitsPerSample::Sixteen);
+    stream_descr_regs.format.set_number_of_channels(NumOfChannels::Two);
+    stream_descr_regs.set_bdl_base_addr(&bdl);
+    let mut interrupt_regs = sound_device.interrupt_regs_mut();
+    // Clear bit to stop data block
+    interrupt_regs.set_stream_sync_bit(0, false);
+
+    dac.power_up(&mut commander);
+    dac.set_converter_format(stream_descr_regs.format.reg_value(), &mut commander);
+    dac.setup_stream_and_channel(&mut commander, 1, 0);
+
+    dac.unmute(&mut commander);
+
+    let x = pin.eapd_enable(&mut commander);
+    println!("EAPD: {:?}", x.eapd());
+
+    pin.enable_eapd(&mut commander);
+    pin.enable(&mut commander);
+    pin.unmute(&mut commander);
+
+    let y = pin.eapd_enable(&mut commander);
+    println!("EAPD: {:?}", y.eapd());
+
+    if pin.power_ctrl_supported(&mut commander) {
+        pin.power_up(&mut commander);
+    }
+
+
+
+    stream_descr_regs.control.set_stream_run(true);
+    /*let time = 0;
+    loop {
+        time += 1;
+        if time > 1_000_000_000 {
+            time = 0;
+            println!("{:?}", stream_descr_regs.link_pos_in_buffer);
+        }
     }*/
+    /*println!("Stream reset: {:?}", stream_descr_regs.control.stream_reset());
+
+    for dac in sound_device.output_converters.iter() {
+        println!("DAC: {:?}", dac);
+    }
+
+    for pin in sound_device.output_pins.iter() {
+        println!("Pin {:?} Conn List", pin.addr);
+        for input in pin.conn_list.iter() {
+            println!("Input: {:?}", input);
+        }
+    }*/
+
+    println!("Got Here");
     loop {}
 }
 
+/*
 /// Gets the max number of entries supported for the
 /// CORB and RIRB
 fn get_corb_rirb_sizes(sound_device: &SoundDevice) -> (HDARingBufferSize, HDARingBufferSize) {
@@ -258,6 +338,7 @@ fn get_corb_rirb_sizes(sound_device: &SoundDevice) -> (HDARingBufferSize, HDARin
     }
     (corb_size, rirb_size)
 }
+*/
 
 /// Searches all buses on the PCI until it finds the HDA
 ///
@@ -282,6 +363,197 @@ fn find_hda_bus_and_device_number() -> Option<SoundDevice> {
         }
     }
     None
+}
+
+/// The codec address and node id of a node in a codec
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct NodeAddr(u8, u8);
+
+impl NodeAddr {
+    fn codec_addr(&self) -> u8 {
+        self.0
+    }
+    fn node_id(&self) -> u8 {
+        self.1
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Pin {
+    addr: NodeAddr,
+    conn_list: Vec<'static, NodeAddr>
+}
+
+impl Pin {
+    fn new(addr: NodeAddr, conn_list: Vec<'static, NodeAddr>) -> Self {
+        Self { addr, conn_list }
+    }
+
+    fn enable(&mut self, commander: &mut Commander) {
+        let pin_ctrl = PinControl::new()
+            .input_enabled(true)
+            .output_enabled(true);
+        let pin_widget_ctrl_command = HDANodeCommand::set_pin_widget_control(
+            self.addr.codec_addr(),
+            self.addr.node_id(),
+            pin_ctrl
+        );
+        commander.command(pin_widget_ctrl_command);
+    }
+
+    fn eapd_enable(&self, commander: &mut Commander) -> EAPDEnable {
+        let cmd = HDANodeCommand::eapd_enable(self.addr);
+        commander.command(cmd)
+            .eapd_enable_resp()
+            .unwrap()
+    }
+
+    // Not working either
+    fn enable_eapd(&mut self, commander: &mut Commander) {
+        let eapd_enable = EAPDEnableBuilder::new()
+            .eapd(true)
+            .value();
+        let cmd = HDANodeCommand::set_eapd_enable(self.addr, eapd_enable.into());
+        commander.command(cmd);
+    }
+
+    fn num_of_inputs(&self, commander: &mut Commander) -> u8 {
+        let conn_list_len_command = HDANodeCommand::get_conn_list_len(self.addr.codec_addr(), self.addr.node_id());
+        let resp = commander.command(conn_list_len_command)
+            .get_conn_list_len_resp()
+            .unwrap();
+        resp.conn_list_len()
+    }
+
+    fn power_ctrl_supported(&self, commander: &mut Commander) -> bool {
+        let afg_widget_cap = HDANodeCommand::afg_widget_capabilities(self.addr.codec_addr(), self.addr.node_id());
+        let resp = commander.command(afg_widget_cap)
+            .afg_widget_capabilities_resp()
+            .unwrap();
+        resp.power_ctrl_supported()
+    }
+
+    fn power_up(&self, commander: &mut Commander) {
+        let set_power_command = HDANodeCommand::set_power_state(
+            self.addr.codec_addr(),
+            self.addr.node_id(),
+            PowerState::D0
+        );
+        commander.command(set_power_command);
+    }
+
+    fn unmute(&mut self, commander: &mut Commander) {
+        let get_amp_cap_command = HDANodeCommand::get_out_amp_capabilties(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        let amp_cap = commander.command(get_amp_cap_command)
+            .amp_capabilities_resp();
+        if amp_cap.is_err() { return; }
+        let amp_cap = amp_cap.unwrap();
+        // Unmute DAC amplifier
+        let amp_gain = AmpGain::new()
+            .mute(false)
+            .output_amp(true)
+            .left_amp(true)
+            .right_amp(true)
+            .index(0)
+            .gain(0x7f);
+        let set_amp_gain_command = HDANodeCommand::set_amp_gain(
+            self.addr.codec_addr(),
+            self.addr.node_id(),
+            amp_gain
+        );
+        commander.command(set_amp_gain_command);
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DAC {
+    addr: NodeAddr
+}
+
+impl DAC {
+    fn new(addr: NodeAddr) -> Self {
+        Self { addr }
+    }
+
+    fn setup_stream_and_channel(&mut self, commander: &mut Commander, stream: u8, channel: u8) {
+        // Set up the DAC to receive input from the stream
+        let converter_ctrl = ConverterControl::new()
+            .stream(stream)
+            .channel(channel);
+        let converter_control_command = HDANodeCommand::set_converter_control(
+            self.addr.codec_addr(),
+            self.addr.node_id(),
+            converter_ctrl
+        );
+        commander.command(converter_control_command);
+    }
+
+    fn output_amp_cap(&self, commander: &mut Commander) -> HDANodeResponseAmpCapabilities {
+        let get_amp_cap_command = HDANodeCommand::get_out_amp_capabilties(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        commander.command(get_amp_cap_command)
+            .amp_capabilities_resp()
+            .unwrap()
+    }
+
+    fn unmute(&mut self, commander: &mut Commander) {
+        let amp_cap = self.output_amp_cap(commander);
+        // Unmute DAC amplifier
+        let amp_gain = AmpGain::new()
+            .mute(false)
+            .output_amp(true)
+            .left_amp(true)
+            .right_amp(true)
+            .index(0)
+            .gain(0x7f);
+        let set_amp_gain_command = HDANodeCommand::set_amp_gain(
+            self.addr.codec_addr(),
+            self.addr.node_id(),
+            amp_gain
+        );
+        commander.command(set_amp_gain_command);
+    }
+
+    fn power_up(&self, commander: &mut Commander) {
+        let set_power_command = HDANodeCommand::set_power_state(
+            self.addr.codec_addr(),
+            self.addr.node_id(),
+            PowerState::D0
+        );
+        commander.command(set_power_command);
+    }
+
+    fn set_converter_format(&mut self, format: u16, commander: &mut Commander) {
+        let set_format = HDANodeCommand::set_converter_format(self.addr, format);
+        commander.command(set_format);
+    }
+
+    fn digital_ctrl(&self, commander: &mut Commander) -> DigitalConverterControl {
+        let digi_ctrl_command = HDANodeCommand::get_digital_converter_ctrl(self.addr);
+        commander.command(digi_ctrl_command)
+            .digital_converter_ctrl_resp()
+            .unwrap()
+    }
+
+    // For some currently unknown reason, this function doesn't
+    // actually change anything
+    fn set_digital_ctrl(&mut self, digi_ctrl: DigitalConverterControl, commander: &mut Commander) {
+        let set_digi_ctrl_cmds = HDANodeCommand::set_digital_converter_ctrl(self.addr, digi_ctrl.into());
+        for cmd in set_digi_ctrl_cmds {
+            commander.command(cmd);
+        }
+    }
+}
+
+impl PartialEq<NodeAddr> for DAC {
+    fn eq(&self, rhs: &NodeAddr) -> bool {
+        self.addr == *rhs
+    }
 }
 
 /// A device on the PCI bus
@@ -459,225 +731,156 @@ impl PCIDevice {
 
 /// A HDA sound device on the PCI bus
 struct SoundDevice {
-    pci_config: PCIDevice
-}
-
-impl SoundDevice {
-    /// Sets up the CORB to a ready state for communication
-    /// with the HDA controller
-    fn init_corb(&mut self, corb: &CORB) {
-        if self.corb_control().corb_dma_engine_enabled() {
-            self.enable_corb_dma_engine(false);
-        }
-        /*let mut corb_ctrl_reg = self.corb_control();
-        // The engine must not be running yet
-        //if corb_ctrl_reg.corb_dma_engine_enabled() {
-            // The DMA engine must first be stopped
-            corb_ctrl_reg.enable_corb_dma_engine(false);
-            self.set_corb_control(corb_ctrl_reg);
-            // The value of false must be read back to verify
-            // that the engine stopped
-            loop {
-                if !self.corb_control().corb_dma_engine_enabled() {
-                    break;
-                }
-            }*/
-        //}
-        let mut corb_size_reg = self.corb_size();
-        let corb_size_capability = corb_size_reg.size_capability();
-        corb_size_reg.set_corb_size(corb.size());
-        self.set_corb_size(corb_size_reg);
-        self.set_corb_addr(&corb.commands as *const _ as u64);
-
-        let mut corbwp_reg = self.corbwp();
-        corbwp_reg.set_write_pointer(0);
-        self.set_corbwp(corbwp_reg);
-
-        let mut corbrp_reg = self.corbrp();
-        corbrp_reg.set_read_pointer_reset(true);
-        self.set_corbrp(corbrp_reg);
-        loop {
-            // The value must be read back to verify that
-            // it was reset
-            let corbrp_reg = self.corbrp();
-            if corbrp_reg.read_pointer_reset() {
-                break;
-            }
-        }
-        
-        // The read pointer reset must then be cleared again
-        let mut corbrp_reg = self.corbrp();
-        corbrp_reg.set_read_pointer_reset(false);
-        self.set_corbrp(corbrp_reg);
-        loop {
-            // The value must be read back to verify that it was reset
-            let corbrp_reg = self.corbrp();
-            if !corbrp_reg.read_pointer_reset() {
-                break;
-            }
-        }
-        
-        //self.enable_corb_dma_engine(true);
-    }
-
-    fn init_rirb(&mut self, rirb: &RIRB) {
-        self.enable_rirb_dma_engine(false);
-        /*let mut rirb_ctrl_reg = self.rirb_control();
-        //if rirb_ctrl_reg.rirb_dma_engine_enabled() {
-            // The DMA engine must first be stopped
-            rirb_ctrl_reg.enable_rirb_dma_engine(false);
-            self.set_rirb_control(rirb_ctrl_reg);
-            // The value of false must be read back to verify
-            // that the engine stopped
-            loop {
-                if !self.rirb_control().rirb_dma_engine_enabled() {
-                    break;
-                }
-            }*/
-        //}
-        let mut rirb_size_reg = self.rirb_size();
-        let rirb_size_capability = rirb_size_reg.size_capability();
-        rirb_size_reg.set_rirb_size(rirb.size());
-        self.set_rirb_size(rirb_size_reg);
-        self.set_rirb_addr(&rirb.responses as *const _ as u64);
-
-        let mut rirbwp_reg = self.rirbwp();
-        rirbwp_reg.reset_write_pointer();
-        self.set_rirbwp(rirbwp_reg);
-
-        //let mut rirb_ctrl_reg = self.rirb_control();
-        //rirb_ctrl_reg.enable_rirb_dma_engine(true);
-        //rirb_ctrl_reg.set_response_overrun_interrupt_control(true);
-        //self.set_rirb_control(rirb_ctrl_reg);
-
-        let mut rintcnt_reg = self.response_interrupt_count();
-        rintcnt_reg.set_response_interrupt_count(255);
-        self.set_response_interrupt_count(rintcnt_reg);
-
-        // The value of true must be read back to verify that
-        // the DMA engine is in a running state
-        //self.enable_rirb_dma_engine(true);
-        /*let mut timeout = 0;
-        loop {
-            let mut rirb_ctrl_reg = self.rirb_control();
-            if rirb_ctrl_reg.rirb_dma_engine_enabled() || timeout == 100_000 {
-                break;
-            }
-            timeout += 1;
-        }*/
-    }
+    pci_config: PCIDevice,
+    output_pins: Vec<'static, Pin>,
+    output_converters: Vec<'static, DAC>,
+    codec_addrs: Vec<'static, u8>,
+    beep_gen: Option<NodeAddr>
 }
 
 impl SoundDevice {
     // Register offsets
-    const GLOBAL_CAPABILTIES_OFFSET: isize = 0x00;
-    const GLOBAL_CONTROL_OFFSET: isize = 0x08;
-    const WAKE_ENABLE_OFFSET: isize = 0x0c;
-    const STATE_CHANGE_STATUS_OFFSET: isize = 0x0e;
-    const INTERRUPT_CONTROL_OFFSET: isize = 0x20;
-    const INTERRUPT_STATUS_OFFSET: isize = 0x24;
-    const CORB_LOWER_BASE_ADDR_OFFSET: isize = 0x40;
-    const CORB_UPPER_BASE_ADDR_OFFSET: isize = 0x44;
-    const CORB_WRITE_POINTER_OFFSET: isize = 0x48;
-    const CORB_READ_POINTER_OFFSET: isize = 0x4a;
-    const CORB_CONTROL_OFFSET: isize = 0x4c;
-    const CORB_STATUS_OFFSET: isize = 0x4d;
-    const CORB_SIZE_OFFSET: isize = 0x4e;
-    const RIRB_LOWER_BASE_ADDR_OFFSET: isize = 0x50;
-    const RIRB_UPPER_BASE_ADDR_OFFSET: isize = 0x54;
-    const RIRB_WRITE_POINTER_OFFSET: isize = 0x58;
-    const RESPONSE_INTERRUPT_COUNT_OFFSET: isize = 0x5a;
-    const RIRB_CONTROL_OFFSET: isize = 0x5c;
-    const RIRB_STATUS_OFFSET: isize = 0x5d;
-    const RIRB_SIZE_OFFSET: isize = 0x5e;
+    const CONTROLLER_REGS_OFFSET: isize = 0x00;
+    const INTERRUPT_REGS_OFFSET: isize = 0x20;
+    const CORB_REGS_OFFSET: isize = 0x40;
+    const RIRB_REGS_OFFSET: isize = 0x50;
     const IMMEDIATE_COMMAND_OUTPUT_OFFSET: isize = 0x60;
     const IMMEDIATE_RESPONSE_INPUT_OFFSET: isize = 0x64;
-    const DMA_POS_LOWER_BASE_ADDR_OFFSET: isize = 0x70;
-    const DMA_POS_UPPER_BASE_ADDR_OFFSET: isize = 0x74;
-    const STREAM_DESCRIPTOR_CONTROL_OFFSET: isize = 0x80;
-    const STREAM_DESCRIPTOR_STATUS_OFFSET: isize = 0x83;
-    const STREAM_DESCRIPTOR_LINK_POSITION_OFFSET: isize = 0x84;
-    const STREAM_DESCRIPTOR_CYCLIC_BUFFER_LENGTH_OFFSET: isize = 0x88;
-    const STREAM_DESCRIPTOR_LAST_VALID_INDEX_OFFSET: isize = 0x8c;
-    const STREAM_DESCRIPTOR_FIFO_SIZE_OFFSET: isize = 0x90;
-    const STREAM_DESCRIPTOR_FORMAT_OFFSET: isize = 0x92;
-    const STREAM_DESCRIPTOR_BDL_POINTER_LOWER_BASE_ADDR_OFFSET: isize = 0x98;
-    const STREAM_DESCRIPTOR_BDL_POINTER_UPPER_BASE_ADDR_OFFSET: isize = 0x9c;
 
-    fn start(&mut self) {
-        /*println!("CORB DMA: {}, RIRB DMA: {}", self.corb_control().corb_dma_engine_enabled(),
-            self.rirb_control().rirb_dma_engine_enabled());
-            loop {}
-        // When the controller is first brought up, it will be in reset
-        // and to start operation, it has to be taken out of reset
-        let mut corb_ctrl_reg = self.corb_control();
-        // The engine must not be running yet
-        if corb_ctrl_reg.corb_dma_engine_enabled() {
-            // The DMA engine must first be stopped
-            corb_ctrl_reg.enable_corb_dma_engine(false);
-            self.set_corb_control(corb_ctrl_reg);
-            // The value of false must be read back to verify
-            // that the engine stopped
-            loop {
-                if !self.corb_control().corb_dma_engine_enabled() {
-                    break;
-                }
-            }
+    fn new(pci_config: PCIDevice) -> Self {
+        Self {
+            pci_config,
+            output_pins: vec!(item_type => Pin, capacity => 10),
+            output_converters: vec!(item_type => DAC, capacity => 10),
+            codec_addrs: vec!(item_type => u8, capacity => 15),
+            beep_gen: None
         }
-        let mut rirb_ctrl_reg = self.rirb_control();
-        if rirb_ctrl_reg.rirb_dma_engine_enabled() {
-            // The DMA engine must first be stopped
-            rirb_ctrl_reg.enable_rirb_dma_engine(false);
-            self.set_rirb_control(rirb_ctrl_reg);
-            // The value of false must be read back to verify
-            // that the engine stopped
-            loop {
-                if !self.rirb_control().rirb_dma_engine_enabled() {
-                    break;
-                }
-            }
-        }*/
-        /*let mut scs_reg = self.state_change_status();
-        scs_reg.clear_sdin_state_change_status();
-        self.set_state_change_status(scs_reg);*/
-
-        /*let mut global_ctrl_reg = self.global_control();
-        global_ctrl_reg.set_controller_reset(false);
-        self.set_global_control(global_ctrl_reg);
-        loop {
-            // The HDA spec dictates that software should wait
-            // after changing the reset value to verify that the value
-            // changed
-            // This keeps loading the controller reset value until
-            // it shows that it is no longer in reset state
-            if !self.global_control().controller_reset() {
-                break;
-            }
-        }*/
-        
-        let mut global_ctrl_reg = self.global_control();
-        // Asserting the bit removes the controller from the reset state
-        global_ctrl_reg.set_controller_reset(true);
-        self.set_global_control(global_ctrl_reg);
-        loop {
-            if self.global_control().controller_reset() {
-                break;
-            }
-        }
-
-        // After reset de-assertion, 521 us should be waited
-        let mut timeout = 0;
-        while timeout < 1_000_000 {
-            timeout += 1 ;
-        }
-
-        while self.state_change_status().sdin_state_change_status() == 0 {}
-        
-        //let mut rintcnt_reg = self.response_interrupt_count();
-        //rintcnt_reg.set_response_interrupt_count(255);
-        //self.set_response_interrupt_count(rintcnt_reg);
     }
 
+    fn set_beep_gen(&mut self, beep_node: NodeAddr) {
+        self.beep_gen = Some(beep_node);
+    }
+
+    fn start(&mut self) {
+        let mut controller_regs = self.controller_regs_mut();
+        // Asserting the bit removes the controller from reset state
+        controller_regs.control.set_controller_reset(true);
+        while !controller_regs.control.controller_reset() {}
+        // After reset de-assertion, 521 us should be waited
+        let mut timeout = 0;
+        while timeout < 1_000_000 { timeout += 1; }
+        // Waiting for the codecs to initialize
+        while controller_regs.state_change_status.sdin_state_change_status() == 0 {}
+
+        // After starting the device the addresses of the codecs
+        // are the set bit positions in the state change status register
+        let sdin_state_change_stat = self
+            .controller_regs()
+            .state_change_status
+            .sdin_state_change_status();
+        (0..16u8)
+            .for_each(|i| if sdin_state_change_stat.get_bit(i.into()) == BitState::Set {
+                self.codec_addrs.push(i);
+            });
+    }
+
+    fn discover_widgets(&mut self, commander: &mut Commander) {
+        for i in 0..self.codec_addrs.len() {
+            let codec_addr = self.codec_addrs[i];
+            // Gettings function group info from the root node
+            let get_node_count_command = HDANodeCommand::get_node_count(codec_addr, 0);
+            let node_count_resp = commander.command(get_node_count_command)
+                .node_count_resp()
+                .unwrap();
+            let first_func_group_id = node_count_resp.start_node_number();
+            
+            for func_group_id in first_func_group_id..first_func_group_id + node_count_resp.number_of_nodes() {
+                // Checking if the function group is an AFG
+                let func_group_type_command = HDANodeCommand::function_group_type(codec_addr, func_group_id);
+                let func_group_type_resp = commander.command(func_group_type_command)
+                    .func_group_type_resp()
+                    .unwrap();
+                if func_group_type_resp.node_type() != HDANodeFunctionGroupType::AFG {
+                    continue;
+                }
+
+                let afg_cap_command = HDANodeCommand::afg_capabilities(codec_addr, func_group_id);
+                let afg_cap_resp = commander.command(afg_cap_command)
+                    .afg_cap_resp()
+                    .unwrap();
+                if afg_cap_resp.has_beep_gen() {
+                    self.set_beep_gen(NodeAddr(codec_addr, func_group_id));
+                }
+                
+                // Getting the number of widgets in the AFG
+                let get_node_count_command = HDANodeCommand::get_node_count(codec_addr, func_group_id);
+                let node_count_resp = commander.command(get_node_count_command)
+                    .node_count_resp()
+                    .unwrap();
+                let start_widget_id = node_count_resp.start_node_number();
+
+                for widget_id in start_widget_id..start_widget_id + node_count_resp.number_of_nodes() {
+                    let afg_widget_cap_command = HDANodeCommand::afg_widget_capabilities(codec_addr, widget_id);
+                    let widget_cap_resp = commander
+                        .command(afg_widget_cap_command)
+                        .afg_widget_capabilities_resp()
+                        .unwrap();
+                    
+                    match widget_cap_resp.widget_type() {
+                        HDAAFGWidgetType::AudioOutput => {
+                            self.output_converters.push(
+                                DAC::new(NodeAddr(codec_addr, widget_id))
+                            );
+                        },
+                        HDAAFGWidgetType::PinComplex => {
+                            let pin_cap_command = HDANodeCommand::get_pin_capabilities(codec_addr, widget_id);
+                            let pin_cap = commander.command(pin_cap_command)
+                                .pin_capabilities_resp()
+                                .unwrap();
+                            if !pin_cap.output_capable() {
+                                continue;
+                            }
+                            let pin_config_default_command = HDANodeCommand::get_pin_config_defaults(codec_addr, widget_id);
+                            let config_defaults = commander.command(pin_config_default_command)
+                                .get_pin_config_defaults_resp()
+                                .unwrap();
+                            if !(config_defaults.port_connectivity() != PortConnectivity::None
+                                && config_defaults.default_device() == DefaultDevice::Speaker) {
+                                    continue;
+                                }
+                            let mut conn_list = vec!(item_type => NodeAddr, capacity => 5);
+                            let get_conn_list_command = HDANodeCommand::get_conn_list_len(codec_addr, widget_id);
+                            let conn_list_len_resp = commander.command(get_conn_list_command)
+                                .get_conn_list_len_resp()
+                                .unwrap();
+                            // To find the entries in the pin's connection list
+                            let mut conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(4);
+                            let mut no_in_batch = 4;
+                            if conn_list_len_resp.long_form() {
+                                conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(2);
+                                no_in_batch = 2;
+                            }
+                            for conn_idx in conn_list_index_iter {
+                                let get_conn_list_entry_command = HDANodeCommand::get_conn_list_entry(codec_addr, widget_id, conn_idx);
+                                let get_conn_list_entry_resp = commander.command(get_conn_list_entry_command)
+                                    .get_conn_list_entry_resp(conn_list_len_resp.long_form())
+                                    .unwrap();
+                                
+                                // Looking for a DAC connected to the pin
+                                for connected_node_id in get_conn_list_entry_resp.entries() {
+                                    assert!((connected_node_id & 0xff) == connected_node_id.as_u8().as_u16());
+                                    conn_list.push(NodeAddr(codec_addr, connected_node_id.as_u8()));
+                                }
+                            }
+                            self.output_pins.push(Pin::new(NodeAddr(codec_addr, widget_id), conn_list));
+                        },
+                        _ => ()
+                    };
+                }
+            }
+        }
+    }
+    
     /// Returns the pointer to the location of the device's
     /// memory mapped registers
     fn base_ptr(&self) -> *mut u8 {
@@ -691,6 +894,87 @@ impl SoundDevice {
         unsafe { self.base_ptr().offset(offset) }
     }
 
+    fn controller_regs(&self) -> &'static ControllerRegs {
+        let ptr = self.reg_ptr(Self::CONTROLLER_REGS_OFFSET).cast::<ControllerRegs>();
+        unsafe { &*ptr }
+    }
+
+    fn controller_regs_mut(&self) -> &'static mut ControllerRegs {
+        let ptr = self.reg_ptr(Self::CONTROLLER_REGS_OFFSET).cast::<ControllerRegs>();
+        unsafe { &mut *ptr }
+    }
+
+    fn interrupt_regs(&self) -> &'static InterruptRegs {
+        let ptr = self.reg_ptr(Self::INTERRUPT_REGS_OFFSET).cast::<InterruptRegs>();
+        unsafe { &*ptr }
+    }
+
+    fn interrupt_regs_mut(&self) -> &'static mut InterruptRegs {
+        let ptr = self.reg_ptr(Self::INTERRUPT_REGS_OFFSET).cast::<InterruptRegs>();
+        unsafe { &mut *ptr }
+    }
+
+    fn corb_regs(&self) -> &'static CORBRegs {
+        let ptr = self.reg_ptr(Self::CORB_REGS_OFFSET).cast::<CORBRegs>();
+        unsafe { &*ptr }
+    }
+
+    fn corb_regs_mut(&self) -> &'static mut CORBRegs {
+        let ptr = self.reg_ptr(Self::CORB_REGS_OFFSET).cast::<CORBRegs>();
+        unsafe { &mut *ptr }
+    }
+
+    fn rirb_regs(&self) -> &'static RIRBRegs {
+        let ptr = self.reg_ptr(Self::RIRB_REGS_OFFSET).cast::<RIRBRegs>();
+        unsafe { &*ptr }
+    }
+
+    fn rirb_regs_mut(&self) -> &'static mut RIRBRegs {
+        let ptr = self.reg_ptr(Self::RIRB_REGS_OFFSET).cast::<RIRBRegs>();
+        unsafe { &mut *ptr }
+    }
+
+    /// The offset of the output stream descriptor register n
+    ///
+    /// Returns None when the output stream descriptor n does not exist
+    fn output_stream_descriptor_offset(&self, n: u8) -> Option<isize> {
+        let controller_regs = self.controller_regs();
+        if n > 15 {
+            None
+        } else if n > controller_regs.capabilities.num_of_output_streams() {
+            None
+        } else {
+            // Calculations as described in the HDA spec
+            let x = 0x80 + (controller_regs.capabilities.num_of_input_streams().as_isize() * 0x20);
+            Some(x + n.as_isize() * 0x20)
+        }
+    }
+    
+    /// Returns the pointer to stream descriptor registers at offset n
+    fn stream_descriptor_regs_ptr(&self, n: u8) -> Option<*mut StreamDescriptorRegs> {
+        let offset = self.output_stream_descriptor_offset(n);
+        if offset.is_none() {
+            return None;
+        }
+        let ptr = self.reg_ptr(offset.unwrap()).cast::<StreamDescriptorRegs>();
+        Some(ptr)
+    }
+
+    fn stream_descriptor_regs(&self, n: u8) -> Option<&'static StreamDescriptorRegs> {
+        let ptr = self.stream_descriptor_regs_ptr(n);
+        if ptr.is_none() { return None; }
+        let ptr = ptr.unwrap();
+        Some(unsafe { &*ptr })
+    }
+
+    fn stream_descriptor_regs_mut(&self, n: u8) -> Option<&'static mut StreamDescriptorRegs> {
+        let ptr = self.stream_descriptor_regs_ptr(n);
+        if ptr.is_none() { return None; }
+        let ptr = ptr.unwrap();
+        Some(unsafe { &mut *ptr })
+    }
+
+/*
     fn set_corb_addr(&mut self, addr: u64) {
         let lower = (addr & 0xffffffff) as u32;
         let upper = (addr >> 32) as u32;
@@ -846,8 +1130,35 @@ impl SoundDevice {
         unsafe { ptr.write(upper) };
     }
 
-    fn stream_descriptor_control(&self) -> HDAStreamDescriptorControlReg {
-        let ptr = self.reg_ptr(Self::STREAM_DESCRIPTOR_CONTROL_OFFSET).cast::<u8>();
+    /// The offset of the output stream descriptor register n
+    ///
+    /// Returns None when the output stream descriptor n does not exist
+    fn output_stream_descriptor_offset(&self, n: u8) -> Option<isize> {
+        if n > 15 {
+            None
+        } else if n > self.global_control().num_of_output_streams() {
+            None
+        } else {
+            let x = 0x80 + (self.global_control().num_of_input_streams().to_isize() * 0x20);
+            Some(x + n * 0x20)
+        }
+    }
+    
+    /// Returns the stream descriptor registers at offset n
+    fn stream_descriptor_regs(&self, n: u8) -> &'static StreamDescriptorRegs {
+        let offset = self.output_stream_descriptor_offset(n);
+        if offset.is_none() {
+            return None;
+        }
+        let ptr = self.reg_ptr(offset.unwrap()).cast::<StreamDescriptorRegs>();
+        unsafe { &*ptr }
+    }
+*/
+/*
+    fn output_stream_descriptor_control(&self, n: u8) -> Option<HDAStreamDescriptorControlReg> {
+        let offset = self.output_stream_descriptor_offset(n);
+        if offset.is_none() { return None; }
+        let ptr = self.reg_ptr(offset.unwrap()).cast::<u8>();
         let first_byte = unsafe { ptr.read() };
         let second_byte = unsafe { ptr.offset(1).read() };
         let third_byte = unsafe { ptr.offset(2).read() };
@@ -855,13 +1166,15 @@ impl SoundDevice {
         HDAStreamDescriptorControlReg::from(val)
     }
 
-    fn steam_descriptor_status(&self) -> HDAStreamDescriptorStatusReg {
-        let ptr = self.reg_ptr(Self::STREAM_DESCRIPTOR_STATUS_OFFSET).cast::<u8>();
+    fn output_steam_descriptor_status(&self, n: u8) -> Option<HDAStreamDescriptorStatusReg> {
+        let offset = self.output_stream_descriptor_offset(n);
+        if offset.is_none() { return None; }
+        let ptr = self.reg_ptr(offset.unwrap() + 3).cast::<u8>();
         unsafe { HDAStreamDescriptorStatusReg::from(ptr.read()) }
     }
 
-    fn stream_descriptor_link_position(&self) -> HDAStreamDescriptorLinkPosReg {
-        let ptr = self.reg_ptr(Self::STREAM_DESCRIPTOR_LINK_POSITION_OFFSET).cast::<u32>();
+    fn output_stream_descriptor_link_position(&self, n: u8) -> Option<HDAStreamDescriptorLinkPosReg> {
+        let ptr = self.reg_ptr().cast::<u32>();
         unsafe { HDAStreamDescriptorLinkPosReg::from(ptr.read()) }
     }
 
@@ -884,17 +1197,8 @@ impl SoundDevice {
         let ptr = self.reg_ptr(Self::STREAM_DESCRIPTOR_FORMAT_OFFSET).cast::<u16>();
         unsafe { HDAStreamDescriptorFormatReg::from(ptr.read()) }
     }
-
-    fn set_stream_descriptor_bdl_ptr_addr(&mut self, addr: u64) {
-        let lower = addr as u32;
-        let upper = (addr >> 32) as u32;
-        let ptr = self.reg_ptr(Self::STREAM_DESCRIPTOR_BDL_POINTER_LOWER_BASE_ADDR_OFFSET).cast::<u32>();
-        unsafe { ptr.write(lower) };
-        let ptr = self.reg_ptr(Self::STREAM_DESCRIPTOR_BDL_POINTER_UPPER_BASE_ADDR_OFFSET).cast::<u32>();
-        unsafe { ptr.write(upper) };
-    }
-
-    fn global_capabilities(&self) -> HDAGlobalCapabilitiesReg {
+*/
+/*    fn global_capabilities(&self) -> HDAGlobalCapabilitiesReg {
         let ptr = self.reg_ptr(Self::GLOBAL_CAPABILTIES_OFFSET).cast::<u16>();
         unsafe { HDAGlobalCapabilitiesReg::from(ptr.read()) }
     }
@@ -933,6 +1237,7 @@ impl SoundDevice {
         let ptr = self.reg_ptr(Self::INTERRUPT_STATUS_OFFSET).cast::<u32>();
         unsafe { HDAInterruptStatusReg::from(ptr.read()) }
     }
+*/
 }
 
 impl SoundDevice {
@@ -970,15 +1275,116 @@ impl SoundDevice {
 
 impl From<PCIDevice> for SoundDevice {
     fn from(mut pci_device: PCIDevice) -> SoundDevice {
-        println!("PCI Command: {:b}", pci_device.command());
         pci_device.enable_memory_space_accesses();
-        println!("PCI Command: {:b}", pci_device.command());
-        SoundDevice { pci_config: pci_device }
+        SoundDevice::new(pci_device)
+    }
+}
+
+#[repr(packed)]
+struct ControllerRegs {
+    capabilities: HDAGlobalCapabilitiesReg,
+    minor_version: u8,
+    major_version: u8,
+    output_payload_capability: u16,
+    input_payload_capability: u16,
+    control: HDAGlobalControlReg,
+    wake_enable: HDAWakeEnableReg,
+    state_change_status: HDAStateChangeStatusReg,
+    status: u16,
+    reserved1: [u8; 6],
+    output_stream_payload_capability: u16,
+    input_stream_payload_capability: u16
+}
+
+#[repr(packed)]
+struct InterruptRegs {
+    interrupt_control: HDAInterruptControlReg,
+    interrupt_status: HDAInterruptStatusReg,
+    reserved1: [u8; 8],
+    wall_clock_counter: u32,
+    reserved2: [u8; 4],
+    stream_sync: u32
+}
+
+impl InterruptRegs {
+    /// Sets the stream sync bit for a stream
+    /// descriptor with the number n
+    fn set_stream_sync_bit(&mut self, n: u8, set: bool) {
+        assert!(n < 30);
+        if set {
+            self.stream_sync.set_bit(n.into());
+        } else {
+            self.stream_sync.unset_bit(n.into());
+        }
+    }
+}
+
+#[repr(packed)]
+struct CORBRegs {
+    corb_lower_base_addr: u32,
+    corb_upper_base_addr: u32,
+    corbwp: HDACORBWritePointerReg,
+    corbrp: HDACORBReadPointerReg,
+    control: HDACORBControlReg,
+    status: HDACORBStatusReg,
+    size: HDACORBSizeReg
+}
+
+impl CORBRegs {
+    fn set_corb_addr(&mut self, addr: u64) {
+        let lower = (addr & 0xffffffff) as u32;
+        let upper = (addr >> 32) as u32;
+        self.corb_lower_base_addr = lower;
+        self.corb_upper_base_addr = upper;
+    }
+}
+
+#[repr(packed)]
+struct RIRBRegs {
+    rirb_lower_base_addr: u32,
+    rirb_upper_base_addr: u32,
+    rirbwp: HDARIRBWritePointerReg,
+    response_interrupt_count: HDAResponseInterruptCountReg,
+    control: HDARIRBControlReg,
+    status: HDARIRBStatusReg,
+    size: HDARIRBSizeReg
+}
+
+impl RIRBRegs {
+    fn set_rirb_addr(&mut self, addr: u64) {
+        let lower = addr as u32;
+        let upper = (addr >> 32) as u32;
+        self.rirb_lower_base_addr = lower;
+        self.rirb_upper_base_addr = upper;
+    }
+}
+
+#[repr(packed)]
+struct StreamDescriptorRegs {
+    control: HDAStreamDescriptorControlReg,
+    status: HDAStreamDescriptorStatusReg,
+    link_pos_in_buffer: HDAStreamDescriptorLinkPosReg,
+    cyclic_buffer_len: HDAStreamDescriptorCyclicBufferLenReg,
+    last_valid_index: HDAStreamDescriptorLastValidIndexReg,
+    reserved1: u16,
+    fifo_size: HDAStreamDescriptorFIFOSizeReg,
+    format: HDAStreamDescriptorFormatReg,
+    reserved2: u32,
+    bdl_ptr_lower_base_addr: u32,
+    bdl_ptr_upper_base_addr: u32
+}
+
+impl StreamDescriptorRegs {
+    fn set_bdl_base_addr(&mut self, addr: &BufferDescriptorList) {
+        let addr = addr as *const _ as u64;
+        let lower = addr.get_bits(0..32) as u32;
+        let upper = addr.get_bits(32..64) as u32;
+        self.bdl_ptr_lower_base_addr = lower;
+        self.bdl_ptr_upper_base_addr = upper;
     }
 }
 
 /// Indicates the capabilities of the HDA controller
-#[derive(Clone, Copy)]
 #[repr(transparent)]
 struct HDAGlobalCapabilitiesReg(u16);
 
@@ -1683,79 +2089,98 @@ impl Into<u32> for HDADMAPosLowerBaseAddrReg {
     }
 }
 
-// Only the lower 3 bytes are the values in the 
-// actual register, since the register size is 3 bytes
-#[repr(transparent)]
-struct HDAStreamDescriptorControlReg(u32);
+
+#[repr(packed)]
+struct HDAStreamDescriptorControlReg {
+    low: u16,
+    high: u8
+}
 
 impl HDAStreamDescriptorControlReg {
+    fn as_u32(&self) -> u32 {
+        self.low.as_u32() | (self.high.as_u32() << 16)
+    }
+
+    fn set_u32(&mut self, n: u32) {
+        self.low = (n & 0xffff).as_u16();
+        self.high = ((n >> 16) & 0xff).as_u8();
+    }
+
     /// Returns a number between 0 and 15, where 0 means unused
     /// and 1 to 15 is the tag associated with the data being
     /// transferred on the link 
     fn stream_number(&self) -> u8 {
-        self.0.get_bits(20..24) as u8
+        self.as_u32().get_bits(20..24).as_u8()
     }
 
     fn set_stream_number(&mut self, n: u8) {
         assert!(n > 0 && n < 16);
-        self.0.set_bits(20..24, n as u32);
+        let mut val = self.as_u32();
+        val.set_bits(20..24, n as u32);
+        self.set_u32(val);
     }
 
     /// Returns true if an interrupt will be generated
     /// when the Descriptor Error Status bit is set
     fn descriptor_error_interrupt_enabled(&self) -> bool {
-        self.0.get_bit(4) == BitState::Set
+        self.as_u32().get_bit(4) == BitState::Set
     }
 
     fn enable_descriptor_error_interrupt(&mut self, enable: bool) {
+        let mut val = self.as_u32();
         if enable {
-            self.0.set_bit(4);
+            val.set_bit(4);
         } else {
-            self.0.unset_bit(4);
+            val.unset_bit(4);
         }
+        self.set_u32(val);
     }
 
     /// Returns true if an interrupt will be generated when 
     /// an FIFO error occurs (overrun for input, under run for output)
     fn fifo_interrupt_enabled(&self) -> bool {
-        self.0.get_bit(3) == BitState::Set
+        self.as_u32().get_bit(3) == BitState::Set
     }
 
     fn enable_fifo_interrupt(&mut self, enable: bool) {
+        let mut val = self.as_u32();
         if enable {
-            self.0.set_bit(3);
+            val.set_bit(3);
         } else {
-            self.0.unset_bit(3);
+            val.unset_bit(3);
         }
+        self.set_u32(val);
     }
 
     /// Returns true if an interrupt will be generated when
     /// a buffer completes with the InterruptOnCompletion bit
     /// set in its descriptor
     fn interrupt_on_completion_enabled(&self) -> bool {
-        self.0.get_bit(2) == BitState::Set
+        self.as_u32().get_bit(2) == BitState::Set
     }
 
     /// Returns true if the DMA engine associated with this
     /// input stream is enabled to transfer data in the FIFO
     /// to main memory
     fn stream_run(&self) -> bool {
-        self.0.get_bit(1) == BitState::Set
+        self.as_u32().get_bit(1) == BitState::Set
     }
 
-    /// When set to false, the DMA engine associated with this
-    /// stream is disabled
+    // When set to false, the DMA engine associated with this
+    // stream is disabled
     fn set_stream_run(&mut self, run: bool) {
+        let mut val = self.as_u32();
         if run {
-            self.0.set_bit(1);
+            val.set_bit(1);
         } else {
-            self.0.unset_bit(1);
+            val.unset_bit(1);
         }
+        self.set_u32(val);
     }
 
     /// Tells whether or not the stream is in a reset state
     fn stream_reset(&self) -> bool {
-        self.0.get_bit(0) == BitState::Set
+        self.as_u32().get_bit(0) == BitState::Set
     }
 
     /// Places the stream in a reset state
@@ -1764,7 +2189,9 @@ impl HDAStreamDescriptorControlReg {
     /// must be returned from `stream_reset` to verify that
     /// the stream is in reset
     fn enter_stream_reset(&mut self) {
-        self.0.set_bit(0);
+        let mut val = self.as_u32();
+        val.set_bit(0);
+        self.set_u32(val);
     }
 
     /// Removes the stream from its reset state
@@ -1773,13 +2200,9 @@ impl HDAStreamDescriptorControlReg {
     /// `stream_reset` to verify that the stream is ready to begin
     /// operation
     fn exit_stream_reset(&mut self) {
-        self.0.unset_bit(0);
-    }
-}
-
-impl From<u32> for HDAStreamDescriptorControlReg {
-    fn from(val: u32) -> Self {
-        Self(val)
+        let mut val = self.as_u32();
+        val.unset_bit(0);
+        self.set_u32(val);
     }
 }
 
@@ -1862,8 +2285,9 @@ impl HDAStreamDescriptorCyclicBufferLenReg {
     ///
     /// This must not be called until the next reset occurs and
     /// the run bit is 0
-    fn set_cyclic_buffer_len(&mut self, len: u32) {
-        self.0 = len;
+    fn set_cyclic_buffer_len(&mut self, len: usize) {
+        assert!(len <= u32::MAX.as_usize());
+        self.0 = len.as_u32();
     }
 }
 
@@ -1963,6 +2387,10 @@ impl HDAStreamDescriptorFormatReg {
 
     fn set_number_of_channels(&mut self, n: NumOfChannels) {
         self.0.set_bits(0..4, n as u8 as u16);
+    }
+
+    fn reg_value(&self) -> u16 {
+        self.0
     }
 }
 
@@ -2217,7 +2645,7 @@ impl InterruptOnCompletion {
 struct BufferDescriptorListEntry {
     /// The starting address of the sample buffer, which
     /// must be 128 byte aligned
-    addr: *const u8,
+    addr: *const SampleBuffer,
     /// The length of the buffer described in bytes
     len: u32,
     /// Interrupt on Completion
@@ -2230,23 +2658,30 @@ struct BufferDescriptorListEntry {
 }
 
 impl BufferDescriptorListEntry {
-    fn new(addr: *const u8, len: u32) -> Self {
+    fn new(addr: *const SampleBuffer, len: usize) -> Self {
+        assert!(len <= u32::MAX.as_usize());
         Self {
             addr,
-            len,
+            len: len.as_u32(),
             interrupt_on_completion: InterruptOnCompletion::new()
         }
     }
 
     fn null() -> Self {
         Self {
-            addr: core::ptr::null_mut() as *mut u8,
+            addr: core::ptr::null_mut() as *mut SampleBuffer,
             len: 0,
             interrupt_on_completion: InterruptOnCompletion::new()
         }
     }
+
+    fn len(&self) -> usize {
+        self.len.as_usize()
+    }
 }
 
+/// A structure which describes all the buffers in memory
+/// which makes up the virtual cyclic buffer 
 #[repr(C, align(128))]
 struct BufferDescriptorList {
     // 256 is the max allowed number of entries
@@ -2255,20 +2690,32 @@ struct BufferDescriptorList {
 }
 
 impl BufferDescriptorList {
-    fn new() -> Self {
+    /// Creates a new BufferDescriptorList
+    ///
+    /// The HDA spec dictates that there must be at least 2
+    /// entries in the list
+    fn new(entry1: BufferDescriptorListEntry, entry2: BufferDescriptorListEntry) -> Self {
+        let mut list = [BufferDescriptorListEntry::null(); 256];
+        list[0] = entry1;
+        list[1] = entry2;
         Self {
-            entries: [BufferDescriptorListEntry::null(); 256],
-            curr_index: 0
+            entries: list,
+            curr_index: 1
         }
     }
 
     fn add_entry(&mut self, entry: BufferDescriptorListEntry) -> Result<(), ()> {
-        if self.curr_index >= 256 {
+        if self.curr_index + 1 >= 256 {
             return Err(());
         }
-        self.entries[self.curr_index] = entry;
         self.curr_index += 1;
+        self.entries[self.curr_index] = entry;
         Ok(())
+    }
+
+    fn data_bytes_len(&self) -> usize {
+        (0..self.curr_index)
+            .fold(0, |acc, i| acc + self.entries[i].len())
     }
 }
 
@@ -2282,6 +2729,20 @@ impl HDANodeCommandVerb {
     const SET_BEEP: u32 = 0x70a;
     const GET_CONN_LIST_ENTRY: u32 = 0xf02;
     const CONFIG_DEFAULT: u32 = 0xf1c;
+    const SET_PIN_WIDGET_CONTROL: u32 = 0x707;
+    const SET_CONVERTER_CONTROL: u32 = 0x706;
+    const SET_POWER_STATE: u32 = 0x705;
+    const SET_AMP_GAIN: u32 = 0x3;
+    const SET_CONN_SELECT_CTRL: u32 = 0x701;
+    const SET_BEEP_GEN: u32 = 0x70a;
+    const SET_CONVERTER_FORMAT: u32 = 0x02;
+    const GET_CONVERTER_CONTROL: u32 = 0xf0d;
+    const SET_CONVERTER_CONTROL1: u32 = 0x70d;
+    const SET_CONVERTER_CONTROL2: u32 = 0x70e;
+    const SET_CONVERTER_CONTROL3: u32 = 0x73e;
+    const SET_CONVERTER_CONTROL4: u32 = 0x73f;
+    const SET_EAPD_ENABLE: u32 = 0x70c;
+    const GET_EAPD_ENABLE: u32 = 0xf0c;
     
     fn get_parameter(param_id: u8) -> Self {
         let mut val = 0u32;
@@ -2302,6 +2763,102 @@ impl HDANodeCommandVerb {
         val.set_bits(8..20, Self::CONFIG_DEFAULT);
         Self(val)
     }
+
+    fn set_pin_widget_control(pin_ctrl: PinControl) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, pin_ctrl.into());
+        val.set_bits(8..20, Self::SET_PIN_WIDGET_CONTROL);
+        Self(val)
+    }
+
+    fn set_converter_control(ctrl: ConverterControl) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, ctrl.into());
+        val.set_bits(8..20, Self::SET_CONVERTER_CONTROL);
+        Self(val)
+    }
+
+    fn set_power_state(val: PowerState) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..4, val.into());
+        val.set_bits(8..20, Self::SET_POWER_STATE);
+        Self(val)
+    }
+
+    fn set_amp_gain(val: AmpGain) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..16, val.into());
+        val.set_bits(16..20, Self::SET_AMP_GAIN);
+        Self(val)
+    }
+
+    fn set_conn_select_ctrl(conn_idx: u8) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, conn_idx.into());
+        val.set_bits(8..20, Self::SET_CONN_SELECT_CTRL);
+        Self(val)
+    }
+
+    fn set_beep_gen(divider: u8) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, divider.into());
+        val.set_bits(8..20, Self::SET_BEEP_GEN);
+        Self(val)
+    }
+
+    fn set_converter_format(format: u16) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..16, format.into());
+        val.set_bits(16..20, Self::SET_CONVERTER_FORMAT);
+        Self(val)
+    }
+
+    fn get_digital_converter_ctrl() -> Self {
+        let mut val = 0u32;
+        val.set_bits(8..20, Self::GET_CONVERTER_CONTROL);
+        Self(val)
+    }
+
+    fn set_digital_converter_ctrl1(bits: u8) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, bits.into());
+        val.set_bits(8..20, Self::SET_CONVERTER_CONTROL1);
+        Self(val)
+    }
+
+    fn set_digital_converter_ctrl2(bits: u8) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, bits.into());
+        val.set_bits(8..20, Self::SET_CONVERTER_CONTROL2);
+        Self(val)
+    }
+
+    fn set_digital_converter_ctrl3(bits: u8) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, bits.into());
+        val.set_bits(8..20, Self::SET_CONVERTER_CONTROL3);
+        Self(val)
+    }
+
+    fn set_digital_converter_ctrl4(bits: u8) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, bits.into());
+        val.set_bits(8..20, Self::SET_CONVERTER_CONTROL4);
+        Self(val)
+    }
+
+    fn get_eapd_enable() -> Self {
+        let mut val = 0u32;
+        val.set_bits(8..20, Self::GET_EAPD_ENABLE);
+        Self(val)
+    }
+
+    fn set_eapd_enable(eapd: u8) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, eapd.into());
+        val.set_bits(8..20, Self::SET_EAPD_ENABLE);
+        Self(val)
+    }
 }
 
 impl Into<u32> for HDANodeCommandVerb {
@@ -2320,6 +2877,9 @@ impl HDANodeCommand {
     const PARAMETER_FUNC_GROUP_TYPE: u8 = 0x05;
     const PARAMETER_AFG_WIDGET_CAPABILITIES: u8 = 0x09;
     const PARAMETER_CONN_LIST_LEN: u8 = 0x0e;
+    const PARAMETER_OUTPUT_AMP_CAPABILITIES: u8 = 0x12;
+    const PARAMETER_PIN_CAPABILITIES: u8 = 0x0c;
+    const PARAMETER_AFG_CAPABILITIES: u8 = 0x08;
 
     /// The null command
     fn null() -> HDANodeCommand {
@@ -2345,6 +2905,10 @@ impl HDANodeCommand {
         Self::get_parameter(codec_addr, node_id, Self::PARAMETER_FUNC_GROUP_TYPE)
     }
 
+    fn afg_capabilities(codec_addr: u8, node_id: u8) -> Self {
+        Self::get_parameter(codec_addr, node_id, Self::PARAMETER_AFG_CAPABILITIES)
+    }
+
     fn afg_widget_capabilities(codec_addr: u8, node_id: u8) -> Self {
         Self::get_parameter(codec_addr, node_id, Self::PARAMETER_AFG_WIDGET_CAPABILITIES)
     }
@@ -2363,6 +2927,90 @@ impl HDANodeCommand {
         Self::command(codec_addr, node_id, verb)
     }
 
+    fn set_pin_widget_control(codec_addr: u8, node_id: u8, val: PinControl) -> Self {
+        let verb = HDANodeCommandVerb::set_pin_widget_control(val);
+        Self::command(codec_addr, node_id, verb)
+    }
+
+    fn set_converter_control(codec_addr: u8, node_id: u8, val: ConverterControl) -> Self {
+        let verb = HDANodeCommandVerb::set_converter_control(val);
+        Self::command(codec_addr, node_id, verb)
+    }
+
+    fn set_power_state(codec_addr: u8, node_id: u8, val: PowerState) -> Self {
+        let verb = HDANodeCommandVerb::set_power_state(val);
+        Self::command(codec_addr, node_id, verb)
+    }
+
+    fn set_amp_gain(codec_addr: u8, node_id: u8, amp_gain: AmpGain) -> Self {
+        let verb = HDANodeCommandVerb::set_amp_gain(amp_gain);
+        Self::command(codec_addr, node_id, verb)
+    }
+
+    fn get_out_amp_capabilties(codec_addr: u8, node_id: u8) -> Self {
+        Self::get_parameter(codec_addr, node_id, Self::PARAMETER_OUTPUT_AMP_CAPABILITIES)
+    }
+
+    fn get_amp_gain(codec_addr: u8, node_id: u8) -> Self {
+        let mut val = 0u32;
+        val.set_bits(16..20, 0xb);
+        val.set_bits(0..16, 0b1010000000000000);
+        val.set_bits(20..28, node_id.into());
+        val.set_bits(28..32, codec_addr.into());
+        Self(val)
+    }
+
+    fn get_pin_capabilities(codec_addr: u8, node_id: u8) -> Self {
+        Self::get_parameter(codec_addr, node_id, Self::PARAMETER_PIN_CAPABILITIES)
+    }
+
+    fn set_conn_select_ctrl(codec_addr: u8, node_id: u8, conn_idx: u8) -> Self {
+        let verb = HDANodeCommandVerb::set_conn_select_ctrl(conn_idx);
+        Self::command(codec_addr, node_id, verb)
+    }
+
+    fn set_beep_gen(codec_addr: u8, node_id: u8, divider: u8) -> Self {
+        let verb = HDANodeCommandVerb::set_beep_gen(divider);
+        Self::command(codec_addr, node_id, verb)
+    }
+
+    fn set_converter_format(node_addr: NodeAddr, format: u16) -> Self {
+        let verb = HDANodeCommandVerb::set_converter_format(format);
+        Self::command(node_addr.codec_addr(), node_addr.node_id(), verb)
+    }
+
+    fn get_digital_converter_ctrl(node_addr: NodeAddr) -> Self {
+        let verb = HDANodeCommandVerb::get_digital_converter_ctrl();
+        Self::command(node_addr.codec_addr(), node_addr.node_id(), verb)
+    }
+
+    fn set_digital_converter_ctrl(node_addr: NodeAddr, digi_ctrl: u32) -> [Self; 4] {
+        let bits1 = digi_ctrl.get_bits(0..8).as_u8();
+        let bits2 = digi_ctrl.get_bits(8..16).as_u8();
+        let bits3 = digi_ctrl.get_bits(16..24).as_u8();
+        let bits4 = digi_ctrl.get_bits(24..32).as_u8();
+        let verb1 = HDANodeCommandVerb::set_digital_converter_ctrl1(bits1);
+        let verb2 = HDANodeCommandVerb::set_digital_converter_ctrl2(bits2);
+        let verb3 = HDANodeCommandVerb::set_digital_converter_ctrl3(bits3);
+        let verb4 = HDANodeCommandVerb::set_digital_converter_ctrl4(bits4);
+        [
+            Self::command(node_addr.codec_addr(), node_addr.node_id(), verb1),
+            Self::command(node_addr.codec_addr(), node_addr.node_id(), verb2),
+            Self::command(node_addr.codec_addr(), node_addr.node_id(), verb3),
+            Self::command(node_addr.codec_addr(), node_addr.node_id(), verb4)
+        ]
+    }
+
+    fn eapd_enable(node_addr: NodeAddr) -> Self {
+        let verb = HDANodeCommandVerb::get_eapd_enable();
+        Self::command(node_addr.codec_addr(), node_addr.node_id(), verb)
+    }
+
+    fn set_eapd_enable(node_addr: NodeAddr, val: u8) -> Self {
+        let verb = HDANodeCommandVerb::set_eapd_enable(val);
+        Self::command(node_addr.codec_addr(), node_addr.node_id(), verb)
+    }
+
     fn command(codec_addr: u8, node_id: u8, verb: HDANodeCommandVerb) -> Self {
         let mut val = 0u32;
         val.set_bits(0..20, verb.into());
@@ -2378,10 +3026,155 @@ impl Into<u32> for HDANodeCommand {
     }
 }
 
+/// A structure that is used to control aspects of a pin widget
+#[repr(transparent)]
+struct PinControl(u8);
+
+impl PinControl {
+    fn new() -> Self {
+        Self(0)
+    }
+
+    fn input_enabled(self, enable: bool) -> Self {
+        let mut val = self.0;
+        if enable {
+            val.set_bit(5);
+        } else {
+            val.unset_bit(5);
+        }
+        Self(val)
+    }
+
+    fn output_enabled(self, enable: bool) -> Self {
+        let mut val = self.0;
+        if enable {
+            val.set_bit(6);
+        } else {
+            val.unset_bit(6);
+        }
+        Self(val)
+    }
+}
+
+impl Into<u32> for PinControl {
+    fn into(self) -> u32 {
+        self.0.as_u32()
+    }
+}
+
+/// A structure that controls aspects of an input
+/// or output converter
+#[repr(transparent)]
+struct ConverterControl(u8);
+
+impl ConverterControl {
+    fn new() -> Self {
+        Self(0)
+    }
+
+    fn stream(self, stream: u8) -> Self {
+        assert!(stream < 16);
+        let mut val = self.0;
+        val.set_bits(4..8, stream);
+        Self(val)
+    }
+
+    fn channel(self, channel: u8) -> Self {
+        let mut val = self.0;
+        val.set_bits(0..4, channel);
+        Self(val)
+    }
+}
+
+impl Into<u32> for ConverterControl {
+    fn into(self) -> u32 {
+        self.0.as_u32()
+    }
+}
+
+/// The power states that a widget can be in
+#[derive(Debug, Clone, Copy)]
+enum PowerState {
+    /// Fully powered on
+    D0,
+    Other
+}
+
+impl Into<u32> for PowerState {
+    fn into(self) -> u32 {
+        match self {
+            Self::D0 => 0b000,
+            _ => unimplemented!("The other states aren't used here")
+        }
+    }
+}
+
+#[repr(transparent)]
+struct AmpGain(u16);
+
+impl AmpGain {
+    fn new() -> Self {
+        Self(0)
+    }
+
+    fn mute(self, mute: bool) -> Self {
+        let mut val = self.0;
+        if mute {
+            val.set_bit(7);
+        } else {
+            val.unset_bit(7);
+        }
+        Self(val)
+    }
+
+    fn output_amp(self, amp: bool) -> Self {
+        let mut val = self.0;
+        if amp {
+            val.set_bit(15);
+        } else {
+            val.unset_bit(15);
+        }
+        Self(val)
+    }
+
+    fn left_amp(self, amp: bool) -> Self {
+        let mut val = self.0;
+        if amp {
+            val.set_bit(13);
+        } else {
+            val.unset_bit(13);
+        }
+        Self(val)
+    }
+
+    fn right_amp(self, amp: bool) -> Self {
+        let mut val = self.0;
+        if amp {
+            val.set_bit(12);
+        } else {
+            val.unset_bit(12);
+        }
+        Self(val)
+    }
+
+    fn gain(self, gain: u8) -> Self {
+        let mut val = self.0;
+        val.set_bits(0..7, gain.as_u16());
+        Self(val)
+    }
+
+    fn index(self, idx: u8) -> Self {
+        assert!((idx & 0xf) == idx);
+        let mut val = self.0;
+        val.set_bits(8..12, idx.into());
+        Self(val)
+    }
+}
+
 /// A response received from the HDA controller into
 /// the RIRB
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(C, packed)]
+#[repr(C)]
 struct HDANodeResponse {
     /// The response data received from the codec
     response: u32,
@@ -2445,6 +3238,35 @@ impl HDANodeResponse {
             _ => Ok(HDANodeResponsePinConfigDefaults(self.response))
         }
     }
+
+    fn amp_capabilities_resp(&self) -> Result<HDANodeResponseAmpCapabilities, ()> {
+        match self.response {
+            0 => Err(()),
+            _ => Ok(HDANodeResponseAmpCapabilities(self.response))
+        }
+    }
+
+    fn pin_capabilities_resp(&self) -> Result<HDANodeResponsePinCapabilities, ()> {
+        match self.response {
+            0 => Err(()),
+            _ => Ok(HDANodeResponsePinCapabilities(self.response))
+        }
+    }
+
+    fn afg_cap_resp(&self) -> Result<AFGCapResp, ()> {
+        match self.response {
+            0 => Err(()),
+            _ => Ok(AFGCapResp(self.response))
+        }
+    }
+
+    fn digital_converter_ctrl_resp(&self) -> Result<DigitalConverterControl, ()> {
+        Ok(DigitalConverterControl(self.response))
+    }
+
+    fn eapd_enable_resp(&self) -> Result<EAPDEnable, ()> {
+        Ok(EAPDEnable(self.response.as_u8()))
+    }
 }
 
 impl From<u32> for HDANodeResponse {
@@ -2474,6 +3296,7 @@ impl ResponseInfo {
     }
 }
 
+#[derive(Debug)]
 #[repr(transparent)]
 struct HDANodeResponseNodeCount(u32);
 
@@ -2520,9 +3343,10 @@ enum HDANodeFunctionGroupType {
     /// Audio Function Group
     ///
     /// This type is used for playing audio
-    AFG = 0x01,
+    AFG,
     /// Modem Function Group
-    MFG = 0x02
+    MFG,
+    Other
 }
 
 impl TryInto<HDANodeFunctionGroupType> for u8 {
@@ -2531,6 +3355,7 @@ impl TryInto<HDANodeFunctionGroupType> for u8 {
         match self {
             0x01 => Ok(HDANodeFunctionGroupType::AFG),
             0x02 => Ok(HDANodeFunctionGroupType::MFG),
+            0x80..=0xff => Ok(HDANodeFunctionGroupType::Other),
             _ => Err(())
         }
     }
@@ -2546,6 +3371,12 @@ impl HDANodeResponseAFGWidgetCap {
 
     fn connection_list_present(&self) -> bool {
         self.0.get_bit(8) == BitState::Set
+    }
+
+    /// Returns true when power state control is
+    /// supported on the associated widget
+    fn power_ctrl_supported(&self) -> bool {
+        self.0.get_bit(10) == BitState::Set
     }
 }
 
@@ -2653,6 +3484,176 @@ impl HDANodeResponsePinConfigDefaults {
     }
 }
 
+#[repr(transparent)]
+struct HDANodeResponseAmpCapabilities(u32);
+
+impl HDANodeResponseAmpCapabilities {
+    fn offset(&self) -> u8 {
+        self.0.get_bits(0..7).as_u8()
+    }
+    fn step_size(&self) -> u8 {
+        self.0.get_bits(16..23).as_u8()
+    }
+    fn num_of_steps(&self) -> u8 {
+        self.0.get_bits(8..15).as_u8()
+    }
+}
+
+#[repr(transparent)]
+struct HDANodeResponsePinCapabilities(u32);
+
+impl HDANodeResponsePinCapabilities {
+    fn eapd_capable(&self) -> bool {
+        self.0.get_bit(16) == BitState::Set
+    }
+
+    fn input_capable(&self) -> bool {
+        self.0.get_bit(5) == BitState::Set
+    }
+
+    fn output_capable(&self) -> bool {
+        self.0.get_bit(4) == BitState::Set
+    }
+}
+
+#[repr(transparent)]
+struct AFGCapResp(u32);
+
+impl AFGCapResp {
+    /// Returns true if the AFG associated with this
+    /// response has a beep generator
+    fn has_beep_gen(&self) -> bool {
+        self.0.get_bit(16) == BitState::Set
+    }
+
+    fn input_delay(&self) -> u8 {
+        self.0.get_bits(8..12).as_u8()
+    }
+
+    fn output_delay(&self) -> u8 {
+        self.0.get_bits(0..4).as_u8()
+    }
+}
+
+#[repr(transparent)]
+struct DigitalConverterControl(u32);
+
+impl DigitalConverterControl {
+    fn pro(&self) -> bool {
+        self.0.get_bit(6) == BitState::Set
+    }
+    fn pcm(&self) -> bool {
+        // 0 indicates PCM
+        self.0.get_bit(5) == BitState::Unset
+    }
+    fn digital_enabled(&self) -> bool {
+        self.0.get_bit(0) == BitState::Set
+    }
+}
+
+impl Into<u32> for DigitalConverterControl {
+    fn into(self) -> u32 {
+        self.0
+    }
+}
+
+struct DigitalConverterControlBuilder(u32);
+
+impl DigitalConverterControlBuilder {
+    fn new() -> Self {
+        Self(0)
+    }
+    fn pro(self, set: bool) -> Self {
+        let mut val = self.0;
+        if set {
+            val.set_bit(6);
+        } else {
+            val.unset_bit(6);
+        }
+        Self(val)
+    }
+    fn pcm(self, set: bool) -> Self {
+        let mut val = self.0;
+        if set {
+            val.unset_bit(5);
+        } else {
+            val.set_bit(5);
+        }
+        Self(val)
+    }
+    fn digital_enabled(self, set: bool) -> Self {
+        let mut val = self.0;
+        if set {
+            val.set_bit(0);
+        } else {
+            val.unset_bit(0);
+        }
+        Self(val)
+    }
+    fn value(self) -> DigitalConverterControl {
+        DigitalConverterControl(self.0)
+    }
+}
+
+#[repr(transparent)]
+struct EAPDEnable(u8);
+
+impl EAPDEnable {
+    fn lr_swap(&self) -> bool {
+        self.0.get_bit(2) == BitState::Set
+    }
+    fn eapd(&self) -> bool {
+        self.0.get_bit(1) == BitState::Set
+    }
+    fn btl(&self) -> bool {
+        self.0.get_bit(0) == BitState::Set
+    }
+}
+
+impl Into<u8> for EAPDEnable {
+    fn into(self) -> u8 {
+        self.0
+    }
+}
+
+struct EAPDEnableBuilder(u8);
+
+impl EAPDEnableBuilder {
+    fn new() -> Self {
+        Self(0)
+    }
+    fn eapd(self, set: bool) -> Self {
+        let mut val = self.0;
+        if set {
+            val.set_bit(1);
+        } else {
+            val.unset_bit(1);
+        }
+        Self(val)
+    }
+    fn lr_swap(self, set: bool) -> Self {
+        let mut val = self.0;
+        if set {
+            val.set_bit(2);
+        } else {
+            val.unset_bit(2);
+        }
+        Self(val)
+    }
+    fn btl(self, set: bool) -> Self {
+        let mut val = self.0;
+        if set {
+            val.set_bit(0);
+        } else {
+            val.unset_bit(0);
+        }
+        Self(val)
+    }
+    fn value(self) -> EAPDEnable {
+        EAPDEnable(self.0)
+    }
+}
+
 /// Tells the physical connection status of a
 /// pin complex
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2735,31 +3736,61 @@ struct CORB {
     write_pointer: usize,
     /// The max number of possible entries which is
     /// programmable to 2, 16 or 256
-    size: HDARingBufferSize
+    size: HDARingBufferSize,
+    /// The memory mapped registers controlling the CORB
+    regs: &'static mut CORBRegs
 }
 
 impl CORB {
-    fn new(size: HDARingBufferSize) -> Self {
+    fn new(regs: &'static mut CORBRegs) -> Self {
+        let mut corb_size = HDARingBufferSize::TwoFiftySix;
+        let corb_size_capability = regs.size.size_capability();
+        if !corb_size_capability.size256_supported() {
+            if corb_size_capability.size16_supported() {
+                corb_size = HDARingBufferSize::Sixteen;
+            } else {
+                corb_size = HDARingBufferSize::Two;
+            }
+        }
         Self {
             commands: [HDANodeCommand::null(); 256],
             write_pointer: 0,
-            size
+            size: corb_size,
+            regs
         }
     }
 
-    fn add_command(&mut self, command: HDANodeCommand, sound_device: &mut SoundDevice) {
+    fn add_command(&mut self, command: HDANodeCommand) {
+        while self.regs.corbwp.write_pointer() != self.regs.corbrp.read_pointer() {}
         self.write_pointer = (self.write_pointer + 1) % self.size.entries_as_u16().as_usize();
         self.commands[self.write_pointer] = command;
-        let mut corbwp_reg = sound_device.corbwp();
-        corbwp_reg.set_write_pointer(self.write_pointer.as_u8());
-        sound_device.set_corbwp(corbwp_reg);
-        /*if !sound_device.corb_control().corb_dma_engine_enabled() {
-            sound_device.enable_corb_dma_engine(true);
-        }*/
+        self.regs.corbwp.set_write_pointer(self.write_pointer.as_u8());
     }
     
     fn size(&self) -> HDARingBufferSize {
         self.size
+    }
+
+    /// Sets up the CORB to a ready state for communication
+    /// with the HDA controller
+    fn init(&mut self) {
+        if self.regs.control.corb_dma_engine_enabled() {
+            self.regs.control.enable_corb_dma_engine(false);
+        }
+        
+        self.regs.size.set_corb_size(self.size());
+        self.regs.set_corb_addr(&self.commands as *const _ as u64);
+
+        self.regs.corbwp.set_write_pointer(0);
+
+        self.regs.corbrp.set_read_pointer_reset(true);
+        // The value must be read back to verify that it was reset
+        while !self.regs.corbrp.read_pointer_reset() {}
+        
+        // The read pointer reset must then be cleared again
+        self.regs.corbrp.set_read_pointer_reset(false);
+        while self.regs.corbrp.read_pointer_reset() {}
+        self.regs.control.enable_corb_dma_engine(true);
     }
 }
 
@@ -2779,22 +3810,33 @@ struct RIRB {
     /// The index of the last response read
     read_pointer: usize,
     /// The number of possible entries
-    size: HDARingBufferSize
+    size: HDARingBufferSize,
+    /// The memory mapped registers controlling the RIRB
+    regs: &'static mut RIRBRegs
 }
 
 impl RIRB {
-    fn new(size: HDARingBufferSize) -> Self {
+    fn new(regs: &'static mut RIRBRegs) -> Self {
+        let mut rirb_size = HDARingBufferSize::TwoFiftySix;
+        let rirb_size_capability = regs.size.size_capability();
+        if !rirb_size_capability.size256_supported() {
+            if rirb_size_capability.size16_supported() {
+                rirb_size = HDARingBufferSize::Sixteen;
+            } else {
+                rirb_size = HDARingBufferSize::Two;
+            }
+        }
         Self {
             responses: [HDANodeResponse::null(); 256],
             read_pointer: 0,
-            size
+            size: rirb_size,
+            regs
         }
     }
 
-    fn read_next_response(&mut self, sound_device: &mut SoundDevice) -> HDANodeResponse {
-        /*if !sound_device.rirb_control().rirb_dma_engine_enabled() {
-            sound_device.enable_rirb_dma_engine(true);
-        }*/
+    fn read_next_response(&mut self) -> HDANodeResponse {
+        // Wait for the responses to be written
+        while self.regs.rirbwp.write_pointer() == self.read_pointer.as_u8() {}
         // The buffer is circular, so when the last entry is reached
         // the read pointer should wrap around
         self.read_pointer = (self.read_pointer + 1) % self.size.entries_as_u16().as_usize();
@@ -2803,6 +3845,22 @@ impl RIRB {
 
     fn size(&self) -> HDARingBufferSize {
         self.size
+    }
+
+    fn init(&mut self) {
+        if self.regs.control.rirb_dma_engine_enabled() {
+            self.regs.control.enable_rirb_dma_engine(false);
+        }
+
+        self.regs.size.set_rirb_size(self.size());
+        self.regs.set_rirb_addr(&self.responses as *const _ as u64);
+
+        self.regs.rirbwp.reset_write_pointer();
+
+        self.regs.response_interrupt_count.set_response_interrupt_count(255);
+
+        self.regs.control.enable_rirb_dma_engine(true);
+
     }
 }
 
@@ -2813,17 +3871,62 @@ impl Index<usize> for RIRB {
     }
 }
 
+struct Commander {
+    corb: CORB,
+    rirb: RIRB
+}
+
+impl Commander {
+    fn new(sound_device: &SoundDevice) -> Self {
+        Self {
+            corb: CORB::new(sound_device.corb_regs_mut()),
+            rirb: RIRB::new(sound_device.rirb_regs_mut())
+        }
+    }
+    fn init(&mut self) {
+        self.corb.init();
+        self.rirb.init();
+    }
+
+    fn command(&mut self, command: HDANodeCommand) -> HDANodeResponse {
+        self.corb.add_command(command);
+        self.rirb.read_next_response()
+    }
+}
+
 /// A 16-bit sample container as specified in the HDA spec
+#[derive(Clone, Copy, Debug)]
 #[repr(align(2))]
 struct Sample(u16);
-/*
+
 /// A buffer of samples
 ///
 /// A set of instances of this structure is what makes up
 /// the virtual cyclic buffer. The buffer descriptor list contains
 /// the descriptions of these buffers
+const NUM: usize = 160_000;
 #[repr(C, align(128))]
 struct SampleBuffer {
-    samples: [Sample; ]
+    samples: [Sample; NUM]
 }
-*/
+
+impl SampleBuffer {
+    fn from(sample_bytes: &[u16]) -> Self {
+        let mut samples = [Sample(0); NUM];
+        for (i, bytes) in sample_bytes.iter().enumerate() {
+            if i >= NUM {
+                break;
+            }
+            samples[i] = Sample(*bytes);
+        }
+        Self { samples }
+    }
+
+    fn bytes_len(&self) -> usize {
+        NUM * core::mem::size_of::<Sample>()
+    }
+
+    fn as_ptr(&self) -> *const Self {
+        self as *const _
+    }
+}

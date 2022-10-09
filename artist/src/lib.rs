@@ -190,14 +190,14 @@ impl Artist {
 
     fn printint<T: Integer>(&mut self, n: T) {
         fn inner_printint<T: Integer>(w: &mut Artist, n: T) {
-            if n.to_u8() < 10 {
-                w.write_byte(n.to_u8() + 48, WriteTarget::VGABuffer);
+            if n.as_u8() < 10 {
+                w.write_byte(n.as_u8() + 48, WriteTarget::VGABuffer);
             } else {
-                let n = n.to_u64();
+                let n = n.as_u64();
                 let q = n / 10;
                 let r = n % 10;
                 inner_printint(w, q);
-                w.write_byte(r.to_u8() + 48u8, WriteTarget::VGABuffer);
+                w.write_byte(r.as_u8() + 48u8, WriteTarget::VGABuffer);
             }
         }
         inner_printint(self, n);
@@ -281,7 +281,7 @@ impl Artist {
                             if bitmap.transparency == Transparency::Black && color == Color::Black {
                                 continue;
                             }
-                            self.double_buffer[pos.y().to_usize() + yp][pos.x().to_usize() + xp] = color;
+                            self.double_buffer[pos.y().as_usize() + yp][pos.x().as_usize() + xp] = color;
                         }
                     }
                 }
@@ -295,7 +295,7 @@ impl Artist {
                 let pixel_array_y = bitmap.height() - y - 1;
                 let bottom_repr_array_y = bottom_repr.height() - y - 1;
                 if pos_is_within_screen_bounds(old_pos, x, y) {
-                    self.double_buffer[old_pos.y().to_usize() + y][old_pos.x().to_usize() + x] =
+                    self.double_buffer[old_pos.y().as_usize() + y][old_pos.x().as_usize() + x] =
                         Color::new(bottom_repr.image_data[(bottom_repr_array_y)*bottom_repr.width()+x]);
                 }
             }
@@ -304,7 +304,7 @@ impl Artist {
             for x in 0..bitmap.width() {
                 let pixel_array_y = bitmap.height() - y - 1;
                 if pos_is_within_screen_bounds(new_pos, x, y) {
-                    self.double_buffer[new_pos.y().to_usize() + y][new_pos.x().to_usize() + x] = 
+                    self.double_buffer[new_pos.y().as_usize() + y][new_pos.x().as_usize() + x] = 
                         Color::new(bitmap.image_data[pixel_array_y*bitmap.width()+x]);
                 }
             }
@@ -313,14 +313,14 @@ impl Artist {
 
     /*pub fn redraw_region_in_double_buffer(&mut self, top_left_corner: Point, top_right_corner: Point, bottom_left_corner: Point, bottom_right_corner: Point, bitmaps_to_draw: Vec<(Point, Bitmap)>) {
         for (point, bitmap) in bitmaps_to_draw.iter() {
-            for y in top_left_corner.y().to_usize()..=bottom_left_corner.y().to_usize() {
-                for x in top_left_corner.x().to_usize()..=top_right_corner.x().to_usize() {
-                    if pos_is_within_screen_bounds(Point(x.to_i16(), y.to_i16()), 0, 0) {
+            for y in top_left_corner.y().as_usize()..=bottom_left_corner.y().as_usize() {
+                for x in top_left_corner.x().as_usize()..=top_right_corner.x().as_usize() {
+                    if pos_is_within_screen_bounds(Point(x.as_i16(), y.as_i16()), 0, 0) {
                         // If the current point being drawn falls within the current bitmap's
                         // range, draw the bitmap, else continue
-                        if x >= point.x().to_usize() && x < point.x().to_usize() + bitmap.width()
-                            && y >= point.y().to_usize() && y < point.y().to_usize() + bitmap.height() {
-                                let (bitmap_x, bitmap_y) = (x - point.x().to_usize(), y - point.y().to_usize());
+                        if x >= point.x().as_usize() && x < point.x().as_usize() + bitmap.width()
+                            && y >= point.y().as_usize() && y < point.y().as_usize() + bitmap.height() {
+                                let (bitmap_x, bitmap_y) = (x - point.x().as_usize(), y - point.y().as_usize());
                                 let pixel_array_y = bitmap.height() - bitmap_y - 1;
                                 let color = bitmap.image_data[pixel_array_y*bitmap.width()+bitmap_x];
                                 if self.transparency == Transparency::Black && color == Color::Black {
@@ -382,7 +382,7 @@ impl Artist {
                             if bitmap.transparency == Transparency::Black && color == Color::Black {
                                 continue;
                             }
-                            self.vga_buffer[pos.y().to_usize() + yp][pos.x().to_usize() + xp] = *background;
+                            self.vga_buffer[pos.y().as_usize() + yp][pos.x().as_usize() + xp] = *background;
                         }
                     }
                 }
@@ -405,7 +405,7 @@ impl Artist {
                     if bitmap.transparency == Transparency::Black && color == Color::Black {
                         continue;
                     }
-                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = color;
+                    self.double_buffer[pos.y().as_usize() + y][pos.x().as_usize() + x] = color;
                 }
             }
         }
@@ -420,7 +420,7 @@ impl Artist {
                     if bitmap.transparency == Transparency::Black && color == Color::Black {
                         continue;
                     }
-                    self.double_buffer[pos.y().to_usize() + y][pos.x().to_usize() + x] = *background;
+                    self.double_buffer[pos.y().as_usize() + y][pos.x().as_usize() + x] = *background;
                 }
             }
         }
@@ -474,8 +474,8 @@ pub fn is_printable_ascii(c: u8) -> bool {
 #[inline]
 pub fn pos_is_within_screen_bounds(pos: Point, dx: usize, dy: usize) -> bool {
     pos.y() >= 0 && pos.x() >= 0 
-        && pos.y().to_usize() + dy < SCREEN_HEIGHT
-        && pos.x().to_usize() + dx < SCREEN_WIDTH
+        && pos.y().as_usize() + dy < SCREEN_HEIGHT
+        && pos.x().as_usize() + dx < SCREEN_WIDTH
 }
 
 impl fmt::Write for Artist {

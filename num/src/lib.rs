@@ -99,23 +99,25 @@ pub trait Integer: NumOps + PartialEq + PartialOrd + Sized {
     /// Will panic if the range is out of range of the bit length
     fn get_bits<R: RangeBounds<usize>>(&self, range: R) -> Self;
 
-    fn to_u8(self) -> u8;
+    fn as_u8(self) -> u8;
 
-    fn to_u16(self) -> u16;
+    fn as_u16(self) -> u16;
 
-    fn to_i16(self) -> i16;
+    fn as_i16(self) -> i16;
 
-    fn to_u32(self) -> u32;
+    fn as_u32(self) -> u32;
 
-    fn to_u64(self) -> u64;
+    fn as_u64(self) -> u64;
 
-    fn to_u128(self) -> u128;
+    fn as_u128(self) -> u128;
 
-    fn to_i128(self) -> i128;
+    fn as_i128(self) -> i128;
 
-    fn to_usize(self) -> usize;
+    fn as_usize(self) -> usize;
 
-    fn to_f32(self) -> f32;
+    fn as_isize(self) -> isize;
+
+    fn as_f32(self) -> f32;
     
     fn sinf32(self) -> f32;
 
@@ -148,7 +150,7 @@ pub trait Float: NumOps + Sized {
     fn cosf32(self) -> f32;
 
     /// Rounds the float to the nearest whole number and coverts it to an i16
-    fn to_i16(self) -> i16;
+    fn as_i16(self) -> i16;
 }
 
 macro_rules! impl_int {
@@ -205,47 +207,51 @@ macro_rules! impl_int {
             }
 
             fn sinf32(self) -> f32 {
-                self.to_f32().sinf32()
+                self.as_f32().sinf32()
             }
 
             fn cosf32(self) -> f32 {
-                self.to_f32().cosf32()
+                self.as_f32().cosf32()
             }
 
-            fn to_u8(self) -> u8 {
+            fn as_u8(self) -> u8 {
                 self as u8
             }
 
-            fn to_u16(self) -> u16 {
+            fn as_u16(self) -> u16 {
                 self as u16
             }
 
-            fn to_i16(self) -> i16 {
+            fn as_i16(self) -> i16 {
                 self as i16
             }
 
-            fn to_u32(self) -> u32 {
+            fn as_u32(self) -> u32 {
                 self as u32
             }
 
-            fn to_u64(self) -> u64 {
+            fn as_u64(self) -> u64 {
                 self as u64
             }
 
-            fn to_i128(self) -> i128 {
+            fn as_i128(self) -> i128 {
                 self as i128
             }
 
-            fn to_u128(self) -> u128 {
+            fn as_u128(self) -> u128 {
                 self as u128
             }
 
-            fn to_f32(self) -> f32 {
+            fn as_f32(self) -> f32 {
                 self as f32
             }
 
-            fn to_usize(self) -> usize {
+            fn as_usize(self) -> usize {
                 self as usize
+            }
+
+            fn as_isize(self) -> isize {
+                self as isize
             }
         }
         
@@ -347,7 +353,7 @@ macro_rules! impl_float {
                 }
             }
 
-            fn to_i16(self) -> i16 {
+            fn as_i16(self) -> i16 {
                 self as i16
             }
         }

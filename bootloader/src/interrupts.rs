@@ -1,6 +1,6 @@
 use core::fmt::Write;
 use machine::interrupts::{InterruptDescriptorTable, InterruptStackFrame, IRQ};
-use machine::pic8259::Pics;
+use machine::pic8259::{Pics, PIC_1_OFFSET};
 use machine::instructions::interrupts::{enable as enable_interrupts, disable as disable_interrupts};
 use machine::keyboard::Keyboard;
 use lazy_static::lazy_static;
@@ -19,7 +19,7 @@ lazy_static! {
         idt.brkpoint.set_handler(brkpoint_interrupt_handler);
         idt[IRQ::Timer].set_handler(timer_interrupt_handler);
         idt[IRQ::Keyboard].set_handler(keyboard_interrupt_handler);
-        idt[IRQ::Sound].set_handler(sound_interrupt_handler);
+        //idt[IRQ::Sound].set_handler(sound_interrupt_handler);
         idt
     };
 }
@@ -55,7 +55,7 @@ extern "x86-interrupt" fn double_fault_handler(sf: InterruptStackFrame, err_code
 
 extern "x86-interrupt" fn timer_interrupt_handler(sf: InterruptStackFrame) {
     event_hook::send_event(Event::Timer);
-    unsafe { PICS.lock().end_of_interrupt(IRQ::Timer.as_u8()) }
+    unsafe { PICS.lock().end_of_interrupt(IRQ::Timer.as_u8() + PIC_1_OFFSET) }
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
@@ -66,7 +66,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
     if let Ok(Some(event)) = keyboard.process_byte(scancode) {
         event_hook::send_event(Event::Keyboard(event.keycode, event.direction, event.key_modifiers));
     }
-    unsafe { PICS.lock().end_of_interrupt(IRQ::Keyboard.as_u8()) }
+    unsafe { PICS.lock().end_of_interrupt(IRQ::Keyboard.as_u8() + PIC_1_OFFSET) }
 }
 
 extern "x86-interrupt" fn sound_interrupt_handler(sf: InterruptStackFrame) {

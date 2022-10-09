@@ -1,6 +1,7 @@
 #![no_main]
 #![no_std]
-#![feature(array_windows, stmt_expr_attributes)]
+#![feature(array_windows, array_chunks)]
+#![allow(unaligned_references)]
 
 use core::panic::PanicInfo;
 use core::fmt::Write;
@@ -24,7 +25,7 @@ mod sound;
 mod wav;
 pub fn game_entry_point() -> ! {
     unsafe { sound::figure_out_how_to_make_sounds() };
-    println!("Loading...");
+    println!("Loading...{:?}", sound::MUSIC[0]);
     loop {
         //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
         let mut game = Game::init();
@@ -77,16 +78,16 @@ impl Game {
             .expect("Failed to read the bitmap from the given source");
         let paddle_char = Character::new(Object {
                 pos: Point(
-                    (SCREEN_WIDTH / 2 - paddle_bmp.scaled_width() / 2).to_i16(),
-                    (SCREEN_HEIGHT - 20 - paddle_bmp.scaled_height()).to_i16()
+                    (SCREEN_WIDTH / 2 - paddle_bmp.scaled_width() / 2).as_i16(),
+                    (SCREEN_HEIGHT - 20 - paddle_bmp.scaled_height()).as_i16()
                 ),
                 velocity: Velocity { direction: 0, speed: 0 }
             }, paddle_bmp.convert_to_scaled_bitmap()
         );
         let ball_char = Character::new(Object {
                 pos: Point(
-                    (SCREEN_WIDTH / 2 - ball_bmp.width() / 2).to_i16(),
-                    paddle_char.object.pos.y() - ball_bmp.scaled_height().to_i16()
+                    (SCREEN_WIDTH / 2 - ball_bmp.width() / 2).as_i16(),
+                    paddle_char.object.pos.y() - ball_bmp.scaled_height().as_i16()
                 ),
                 velocity: Velocity { direction: 0, speed: 0 }
             }, ball_bmp.convert_to_scaled_bitmap()
@@ -226,8 +227,8 @@ impl Game {
 
     fn move_paddle_in_double_buffer(&mut self, direction: PaddleDirection) {
         let diff = match direction {
-            PaddleDirection::Left => Point(-4 * X_SCALE.to_i16(), 0),
-            PaddleDirection::Right => Point(4 * X_SCALE.to_i16(), 0)
+            PaddleDirection::Left => Point(-4 * X_SCALE.as_i16(), 0),
+            PaddleDirection::Right => Point(4 * X_SCALE.as_i16(), 0)
         };
         let old_pos = self.paddle_char.object.pos;
         self.paddle_char.object.pos += diff;
@@ -260,7 +261,7 @@ impl Game {
         for y in (BLOCK_START_POS_Y..=BLOCK_END_POS_Y).step_by(block_bmps[0].scaled_height()) {
             for x in (BLOCK_START_POS_X..=BLOCK_END_POS_X).step_by(block_bmps[0].scaled_width()) {
                 let block = Character::new(Object {
-                    pos: Point(x.to_i16(), y.to_i16()),
+                    pos: Point(x.as_i16(), y.as_i16()),
                     velocity: Velocity { direction: 0, speed: 0 }
                 }, block_bmps[i].convert_to_scaled_bitmap());
                 blocks.push(block);
@@ -313,7 +314,7 @@ fn ball_collided_with_left_wall(ball_char: &Character) -> bool {
 }
 
 fn ball_collided_with_right_wall(ball_char: &Character) -> bool {
-    ball_char.object.pos.x() >= SCREEN_WIDTH as i16 - ball_char.repr.width().to_i16()
+    ball_char.object.pos.x() >= SCREEN_WIDTH as i16 - ball_char.repr.width().as_i16()
 }
 
 fn ball_collided_with_ceiling(ball_char: &Character) -> bool {
@@ -323,15 +324,15 @@ fn ball_collided_with_ceiling(ball_char: &Character) -> bool {
 fn ball_collided_with_paddle(ball_char: &Character, paddle_char: &Character) -> bool {
     ball_char.object.pos.y() >= paddle_char.object.pos.y()
         && ball_char.object.pos.x() >= paddle_char.object.pos.x()
-        && ball_char.object.pos.x() <= paddle_char.object.pos.x() + paddle_char.repr.width().to_i16()
+        && ball_char.object.pos.x() <= paddle_char.object.pos.x() + paddle_char.repr.width().as_i16()
 }
 
 fn ball_is_off_screen(ball_char: &Character) -> bool {
-    ball_char.object.pos.y() >= SCREEN_HEIGHT.to_i16()
+    ball_char.object.pos.y() >= SCREEN_HEIGHT.as_i16()
 }
 
 fn paddle_collided_with_right_wall(paddle_char: &Character) -> bool {
-    paddle_char.object.pos.x() + paddle_char.repr.width().to_i16() >= SCREEN_WIDTH.to_i16() - 8
+    paddle_char.object.pos.x() + paddle_char.repr.width().as_i16() >= SCREEN_WIDTH.as_i16() - 8
 }
 
 fn paddle_collided_with_left_wall(paddle_char: &Character) -> bool {
@@ -345,11 +346,11 @@ fn ball_passed_through_paddle(old_pos: Point, new_pos: Point, direction: usize, 
     let direction_of_ball_from_paddle_perspective = 180 + direction;
     let y_distance_between_pos_and_paddle_level = paddle_char.object.pos.y() - old_pos.y();
     let distance_between_x_pos_at_paddle_level_and_old_pos = (
-        y_distance_between_pos_and_paddle_level * direction_of_ball_from_paddle_perspective.cosf32().to_i16()
-    ) / direction_of_ball_from_paddle_perspective.sinf32().to_i16();
+        y_distance_between_pos_and_paddle_level * direction_of_ball_from_paddle_perspective.cosf32().as_i16()
+    ) / direction_of_ball_from_paddle_perspective.sinf32().as_i16();
     let ball_x_pos_at_paddle_level = old_pos.x() - distance_between_x_pos_at_paddle_level_and_old_pos;
     let ball_passed_through_paddle = ball_x_pos_at_paddle_level >= paddle_char.object.pos.x()
-        && ball_x_pos_at_paddle_level <= paddle_char.object.pos.x() + paddle_char.repr.width().to_i16() - 1;
+        && ball_x_pos_at_paddle_level <= paddle_char.object.pos.x() + paddle_char.repr.width().as_i16() - 1;
     let point_at_which_ball_passed_through_paddle_level = Point(ball_x_pos_at_paddle_level, paddle_char.object.pos.y());
     (ball_passed_through_paddle, Some(point_at_which_ball_passed_through_paddle_level))
 }
@@ -376,9 +377,9 @@ impl Character {
     fn collided_with(&self, other_char: &Character) -> (bool, CollidedFrom) {
         let collided = 
         self.object.pos.y() >= other_char.object.pos.y()
-            && self.object.pos.y() <= other_char.object.pos.y() + other_char.repr.height().to_i16()
+            && self.object.pos.y() <= other_char.object.pos.y() + other_char.repr.height().as_i16()
             && self.object.pos.x() >= other_char.object.pos.x()
-            && self.object.pos.x() <= other_char.object.pos.x() + other_char.repr.width().to_i16();
+            && self.object.pos.x() <= other_char.object.pos.x() + other_char.repr.width().as_i16();
         let collided_from = match self.object.velocity.direction {
             0..=180 => CollidedFrom::Bottom,
             181..=360 => CollidedFrom::Top,

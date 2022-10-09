@@ -17,7 +17,7 @@ impl Object {
         let dx = self.velocity.horizontal_component() * time as i16;
         let dy = self.velocity.vertical_component() * time as i16;
         let old_pos = self.pos;
-        self.pos += Point(dx * x_scale.to_i16(), dy * y_scale.to_i16());
+        self.pos += Point(dx * x_scale.as_i16(), dy * y_scale.as_i16());
         old_pos
     }
 }
@@ -32,11 +32,11 @@ pub struct Velocity {
 impl Velocity {
     #[inline]
     pub fn horizontal_component(&self) -> i16 {
-        self.speed as i16 * self.direction.cosf32().to_i16()
+        self.speed as i16 * self.direction.cosf32().as_i16()
     }
     #[inline]
     pub fn vertical_component(&self) -> i16 {
-        self.speed as i16 * self.direction.sinf32().to_i16()
+        self.speed as i16 * self.direction.sinf32().as_i16()
     }
     #[inline]
     pub fn reflect_about_y_axis(&mut self) {

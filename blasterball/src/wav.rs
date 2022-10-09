@@ -56,7 +56,7 @@ struct RIFFChunkHeader {
 #[repr(C)]
 struct SampleDataChunk {
     header: RIFFChunkHeader,
-    data: &'static [u8]
+    data: &'static [u16]
 }
 
 impl WavFile {
@@ -71,7 +71,7 @@ impl WavFile {
         const RIFF_HEADER_SIZE: isize = mem::size_of::<RIFFChunkHeader>() as isize;
         let data_chunk_header = data_ptr.cast::<RIFFChunkHeader>().read();
         let sample_data_ptr = data_ptr.offset(RIFF_HEADER_SIZE);
-        let sample_data = core::slice::from_raw_parts(data_ptr, data_chunk_header.size as usize);
+        let sample_data = core::slice::from_raw_parts(data_ptr.cast::<u16>(), (data_chunk_header.size / 2) as usize);
         Ok(Self {
             header,
             data: SampleDataChunk {
@@ -91,6 +91,10 @@ impl WavFile {
 
     pub fn bits_per_sample(&self) -> u16 {
         self.header.bits_per_sample
+    }
+
+    pub fn data_bytes(&self) -> &'static [u16] {
+        self.data.data
     }
 }
 
