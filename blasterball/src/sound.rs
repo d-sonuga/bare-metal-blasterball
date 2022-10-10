@@ -311,7 +311,7 @@ pub unsafe fn figure_out_how_to_make_sounds() {
     }*/
 
     println!("Got Here");
-    loop {}
+    //loop {}
 }
 
 /*

@@ -174,7 +174,8 @@ impl<'a> EventHooker<'a> {
     /// ```
     pub fn send_event(&self, event: Event) {
         let event_kind = EventKind::from_event(event);
-        for handler in self[event_kind].iter() {
+        for i in 0..self[event_kind].len() {
+            let handler = &self[event_kind][i];
             (handler.func)(event);
         }
     }
@@ -218,7 +219,8 @@ impl<'a> EventHooker<'a> {
     /// assert_eq!(unhook_result, Err(EventHookError::IdxNotFound));
     /// ```
     pub fn unhook_event(&mut self, idx: usize, event_kind: EventKind) -> Result<(), Error> {
-        for (i, handler) in self[event_kind].iter_mut().enumerate() {
+        for i in 0..self[event_kind].len() {
+            let mut handler = &mut self[event_kind][i];
             if let Handler {idx, func, ..} = handler {
                 self[event_kind].remove(i);
                 return Ok(());

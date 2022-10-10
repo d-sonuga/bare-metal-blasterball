@@ -54,6 +54,7 @@ extern "x86-interrupt" fn double_fault_handler(sf: InterruptStackFrame, err_code
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(sf: InterruptStackFrame) {
+    panic!("Timer");
     event_hook::send_event(Event::Timer);
     unsafe { PICS.lock().end_of_interrupt(IRQ::Timer.as_u8() + PIC_1_OFFSET) }
 }

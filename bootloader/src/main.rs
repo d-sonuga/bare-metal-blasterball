@@ -33,7 +33,7 @@ macro_rules! Mem {
     ($n:expr, Kib) => { $n * 2u64.pow(10) };
 }
 
-const APP_STACK_SIZE: u64 = Mem!(17, Mib);
+const APP_STACK_SIZE: u64 = Mem!(40, Mib);
 
 const APP_HEAP_SIZE: u64 = Mem!(10, Mib);
 

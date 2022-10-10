@@ -29,6 +29,8 @@ pub fn game_entry_point() -> ! {
     loop {
         //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
         let mut game = Game::init();
+        // The artist is locked by the game at this point
+        // Do not use any print macro here until the game hase been dropped
         game.main_loop();
         core::mem::drop(game);
         let mut restart = false;
@@ -296,8 +298,8 @@ impl Game {
 
     fn draw_game_in_double_buffer(&mut self) {
         self.artist.draw_scaled_bitmap_in_double_buffer(self.paddle_char.object.pos, &self.paddle_char.repr);
-        for block_char in self.blocks.iter() {
-            self.artist.draw_scaled_bitmap_in_double_buffer(block_char.object.pos, &block_char.repr);
+        for i in 0..self.blocks.len() {
+            self.artist.draw_scaled_bitmap_in_double_buffer(self.blocks[i].object.pos, &self.blocks[i].repr);
         }
         self.artist.draw_scaled_bitmap_in_double_buffer(self.ball_char.object.pos, &self.ball_char.repr);
     }
