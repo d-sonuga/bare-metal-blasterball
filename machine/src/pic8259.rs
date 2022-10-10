@@ -136,9 +136,9 @@ impl Pics {
         self.secondary.data.write(MODE_8086);
         wait();
 
-        // Receive interrupts from only the keyboard and timer
-        // Not yet: and interrupt line 11, which is being used for sound in this project
-        self.write_masks(0xfd, 0xff);
+        // Receive interrupts from only the keyboard, timer
+        // and interrupt line 11, which is being used for sound in this project
+        self.write_masks(0b11111_0_0_0, 0b1111_0111);
     }
 
     /// Reads the interrupt masks of the PICs

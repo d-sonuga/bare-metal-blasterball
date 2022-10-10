@@ -23,6 +23,7 @@ static mut rirb_: Option<RIRB> = None;
 
 #[no_mangle]
 pub unsafe fn figure_out_how_to_make_sounds() {
+    let x = &DRUM;
     println!("So the rust compiler won't remove it, here's a byte {:x}", MUSIC[0]);
     let hda_bus_and_device_number_opt = find_hda_bus_and_device_number();
     if hda_bus_and_device_number_opt.is_none() {
@@ -30,9 +31,9 @@ pub unsafe fn figure_out_how_to_make_sounds() {
     }
     let mut sound_device = hda_bus_and_device_number_opt.unwrap();
     sound_device.start();
-    //sound_device.pci_config.set_interrupt_line(IRQ::Sound);
+    sound_device.pci_config.set_interrupt_line(IRQ::Sound);
     
-    
+    println!("PCI Status: {:b}", sound_device.pci_config.status());
     println!("codec_addrs: {:?}", sound_device.codec_addrs);
     /*
         let get_node_count_command = HDANodeCommand::get_node_count(codec_addrs[0], 0);
@@ -242,11 +243,14 @@ pub unsafe fn figure_out_how_to_make_sounds() {
     }
     let mut dac = dac.unwrap();
 
-    let music = WavFile::from(&MUSIC).unwrap();
+    let music = WavFile::from(x).unwrap();
+    /*let mut stream = OutputStream::new(music, 1);
+    stream.run();*/
+
     let sample_buffer = SampleBuffer::from(music.data_bytes());
 
-    let bdl_entry = BufferDescriptorListEntry::new(sample_buffer.as_ptr(), sample_buffer.bytes_len());
-    let bdl_entry = BufferDescriptorListEntry {
+    //let bdl_entry = BufferDescriptorListEntry::new(sample_buffer.as_ptr(), sample_buffer.bytes_len());
+    let mut bdl_entry = BufferDescriptorListEntry {
         addr: music.data_bytes().as_ptr().cast::<SampleBuffer>(),
         len: music.data_bytes().len().as_u32(),
         interrupt_on_completion: InterruptOnCompletion::new()
@@ -254,6 +258,7 @@ pub unsafe fn figure_out_how_to_make_sounds() {
     let bdl = BufferDescriptorList::new(bdl_entry, bdl_entry);
     let mut stream_descr_regs = sound_device.stream_descriptor_regs_mut(0).unwrap();
     stream_descr_regs.control.set_stream_number(1);
+    stream_descr_regs.control.set_interrupt_on_completion_enable(true);
     stream_descr_regs.cyclic_buffer_len.set_cyclic_buffer_len(bdl.data_bytes_len());
     stream_descr_regs.last_valid_index.set_last_valid_index(1);
     stream_descr_regs.format.set_sample_base_rate(SampleBaseRate::KHz44P1);
@@ -262,10 +267,7 @@ pub unsafe fn figure_out_how_to_make_sounds() {
     stream_descr_regs.format.set_bits_per_sample(BitsPerSample::Sixteen);
     stream_descr_regs.format.set_number_of_channels(NumOfChannels::Two);
     stream_descr_regs.set_bdl_base_addr(&bdl);
-    let mut interrupt_regs = sound_device.interrupt_regs_mut();
-    // Clear bit to stop data block
-    interrupt_regs.set_stream_sync_bit(0, false);
-
+    
     dac.power_up(&mut commander);
     dac.set_converter_format(stream_descr_regs.format.reg_value(), &mut commander);
     dac.setup_stream_and_channel(&mut commander, 1, 0);
@@ -286,32 +288,15 @@ pub unsafe fn figure_out_how_to_make_sounds() {
         pin.power_up(&mut commander);
     }
 
-
-
     stream_descr_regs.control.set_stream_run(true);
-    /*let time = 0;
-    loop {
-        time += 1;
-        if time > 1_000_000_000 {
-            time = 0;
-            println!("{:?}", stream_descr_regs.link_pos_in_buffer);
-        }
-    }*/
-    /*println!("Stream reset: {:?}", stream_descr_regs.control.stream_reset());
 
-    for dac in sound_device.output_converters.iter() {
-        println!("DAC: {:?}", dac);
-    }
-
-    for pin in sound_device.output_pins.iter() {
-        println!("Pin {:?} Conn List", pin.addr);
-        for input in pin.conn_list.iter() {
-            println!("Input: {:?}", input);
-        }
-    }*/
-
+    use event_hook::box_fn;
+    event_hook::hook_event(event_hook::EventKind::Sound, box_fn!(|event| {
+        stream_descr_regs.control.set_stream_run(false);
+    }));
+    
+    loop {}
     println!("Got Here");
-    //loop {}
 }
 
 /*
@@ -364,6 +349,40 @@ fn find_hda_bus_and_device_number() -> Option<SoundDevice> {
     }
     None
 }
+/*
+struct OutputStream {
+    regs: &'static mut StreamDescriptorRegs,
+    sound: WavFile
+}
+
+impl OutputStream {
+    fn new(sound: WavFile, tag: u8, regs: &'static mut StreamDescriptorRegs) -> Self {
+        Self { regs, sound }
+    }
+    fn init(&mut self) {
+        let sample_buffer = SampleBuffer::from(self.sound.data_bytes());
+        let bdl_entry = BufferDescriptorListEntry::new(sample_buffer.as_ptr(), sample_buffer.bytes_len());
+        let bdl_entry = BufferDescriptorListEntry {
+            addr: music.data_bytes().as_ptr().cast::<SampleBuffer>(),
+            len: music.data_bytes().len().as_u32(),
+            interrupt_on_completion: InterruptOnCompletion::new()
+        };
+        let bdl = BufferDescriptorList::new(bdl_entry, bdl_entry);
+        let mut stream_descr_regs = sound_device.stream_descriptor_regs_mut(0).unwrap();
+        stream_descr_regs.control.set_stream_number(1);
+        stream_descr_regs.cyclic_buffer_len.set_cyclic_buffer_len(bdl.data_bytes_len());
+        stream_descr_regs.last_valid_index.set_last_valid_index(1);
+        stream_descr_regs.format.set_sample_base_rate(SampleBaseRate::KHz44P1);
+        stream_descr_regs.format.set_sample_base_rate_multiple(SampleBaseRateMultiple::KHz48OrLess);
+        stream_descr_regs.format.set_sample_base_rate_divisor(SampleBaseRateDivisor::One);
+        stream_descr_regs.format.set_bits_per_sample(BitsPerSample::Sixteen);
+        stream_descr_regs.format.set_number_of_channels(NumOfChannels::Two);
+        stream_descr_regs.set_bdl_base_addr(&bdl);
+        let mut interrupt_regs = sound_device.interrupt_regs_mut();
+        // Clear bit to stop data block
+        interrupt_regs.set_stream_sync_bit(0, false);
+    }
+}*/
 
 /// The codec address and node id of a node in a codec
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -653,6 +672,14 @@ impl PCIDevice {
         amount_of_mem_needed
     }*/
 
+    fn interrupt_pin(&self) -> u8 {
+        assert_eq!(self.header_type(), PCIHeaderType::Standard);
+        let (mut addr_port, data_port) = self.ports();
+        let reg_addr = self.reg_addr(Self::INTERRUPT_PIN_LINE_OFFSET);
+        addr_port.write(reg_addr);
+        (data_port.read() >> 8) as u8
+    }
+
     fn interrupt_line(&self) -> u8 {
         assert_eq!(self.header_type(), PCIHeaderType::Standard);
         let (mut addr_port, data_port) = self.ports();
@@ -666,7 +693,9 @@ impl PCIDevice {
         let (mut addr_port, mut data_port) = self.ports();
         let reg_addr = self.reg_addr(Self::INTERRUPT_PIN_LINE_OFFSET);
         addr_port.write(reg_addr);
-        data_port.write(line.as_u8() as u32);
+        let mut val = data_port.read();
+        val.set_bits(8..16, line.as_u8().as_u32());
+        data_port.write(val);
     }
 
     fn status(&self) -> u16 {
@@ -782,6 +811,23 @@ impl SoundDevice {
             .for_each(|i| if sdin_state_change_stat.get_bit(i.into()) == BitState::Set {
                 self.codec_addrs.push(i);
             });
+        
+        let mut interrupt_regs = self.interrupt_regs_mut();
+
+        // Enable interrupts from the controller
+        interrupt_regs.control.set_global_interrupt_enable(true);
+
+        // Enable interrupts from output streams
+        let num_of_input_streams = controller_regs.capabilities.num_of_input_streams();
+        let num_of_output_streams = controller_regs.capabilities.num_of_output_streams();
+        for stream_idx in 0..num_of_output_streams {
+            // The output streams bits in the interrupt control reg
+            // start after the input streams
+            interrupt_regs.control.set_stream_interrupt_enable(num_of_input_streams + stream_idx);
+        }
+
+        // Enable all possible streams to run in stream sync
+        interrupt_regs.stream_sync.unblock_all_streams();
     }
 
     fn discover_widgets(&mut self, commander: &mut Commander) {
@@ -1276,6 +1322,7 @@ impl SoundDevice {
 impl From<PCIDevice> for SoundDevice {
     fn from(mut pci_device: PCIDevice) -> SoundDevice {
         pci_device.enable_memory_space_accesses();
+        println!("Command reg: {:b}", pci_device.command());
         SoundDevice::new(pci_device)
     }
 }
@@ -1298,25 +1345,12 @@ struct ControllerRegs {
 
 #[repr(packed)]
 struct InterruptRegs {
-    interrupt_control: HDAInterruptControlReg,
-    interrupt_status: HDAInterruptStatusReg,
+    control: HDAInterruptControlReg,
+    status: HDAInterruptStatusReg,
     reserved1: [u8; 8],
     wall_clock_counter: u32,
     reserved2: [u8; 4],
-    stream_sync: u32
-}
-
-impl InterruptRegs {
-    /// Sets the stream sync bit for a stream
-    /// descriptor with the number n
-    fn set_stream_sync_bit(&mut self, n: u8, set: bool) {
-        assert!(n < 30);
-        if set {
-            self.stream_sync.set_bit(n.into());
-        } else {
-            self.stream_sync.unset_bit(n.into());
-        }
-    }
+    stream_sync: StreamSyncReg
 }
 
 #[repr(packed)]
@@ -1591,7 +1625,6 @@ impl HDAInterruptControlReg {
     }
 
     fn set_stream_interrupt_enable(&mut self, stream_bit: u8) {
-        assert!(stream_bit < 6);
         self.0 = self.0 | (1 << stream_bit);
     }
 }
@@ -1629,6 +1662,34 @@ impl HDAInterruptStatusReg {
 impl From<u32> for HDAInterruptStatusReg {
     fn from(val: u32) -> Self {
         Self(val)
+    }
+}
+
+#[repr(transparent)]
+struct StreamSyncReg(u32);
+
+impl StreamSyncReg {
+    /// Sets the stream sync bit for a stream
+    /// descriptor with the number n
+    fn set_stream_bit(&mut self, n: u8, set: bool) {
+        assert!(n < 30);
+        if set {
+            self.0.set_bit(n.into());
+        } else {
+            self.0.unset_bit(n.into());
+        }
+    }
+
+    fn set_stream_sync(&mut self, n: u32) {
+        // The highest 2 bits must be 0
+        assert!(n < (u32::MAX << 2 >> 2));
+        self.0 = n;
+    }
+
+    fn unblock_all_streams(&mut self) {
+        // Clearing a bit unblocks the stream that corresponds
+        // to it
+        self.0 = 0;
     }
 }
 
@@ -2159,6 +2220,16 @@ impl HDAStreamDescriptorControlReg {
         self.as_u32().get_bit(2) == BitState::Set
     }
 
+    fn set_interrupt_on_completion_enable(&mut self, enable: bool) {
+        let mut val = self.as_u32();
+        if enable {
+            val.set_bit(2);
+        } else {
+            val.unset_bit(2);
+        }
+        self.set_u32(val);
+    }
+
     /// Returns true if the DMA engine associated with this
     /// input stream is enabled to transfer data in the FIFO
     /// to main memory
@@ -2632,9 +2703,9 @@ impl InterruptOnCompletion {
     }
 
     /// Defaults to setting interrupt on completion
-    /// to false
+    /// to true
     fn new() -> Self {
-        Self(0)
+        Self(0b1)
     }
 }
 

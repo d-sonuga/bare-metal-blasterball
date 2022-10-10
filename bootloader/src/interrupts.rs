@@ -19,7 +19,7 @@ lazy_static! {
         idt.brkpoint.set_handler(brkpoint_interrupt_handler);
         idt[IRQ::Timer].set_handler(timer_interrupt_handler);
         idt[IRQ::Keyboard].set_handler(keyboard_interrupt_handler);
-        //idt[IRQ::Sound].set_handler(sound_interrupt_handler);
+        idt[IRQ::Sound].set_handler(sound_interrupt_handler);
         idt
     };
 }
@@ -54,7 +54,6 @@ extern "x86-interrupt" fn double_fault_handler(sf: InterruptStackFrame, err_code
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(sf: InterruptStackFrame) {
-    panic!("Timer");
     event_hook::send_event(Event::Timer);
     unsafe { PICS.lock().end_of_interrupt(IRQ::Timer.as_u8() + PIC_1_OFFSET) }
 }
@@ -71,8 +70,8 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
 }
 
 extern "x86-interrupt" fn sound_interrupt_handler(sf: InterruptStackFrame) {
-    panic!("In the sound interrupt handler");
-    loop {}
+    event_hook::send_event(Event::Sound);
+    unsafe { PICS.lock().end_of_interrupt(IRQ::Sound.as_u8() + PIC_1_OFFSET) }
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(sf: InterruptStackFrame, err_code: u64) {

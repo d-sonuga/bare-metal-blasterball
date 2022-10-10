@@ -9,6 +9,7 @@ use core::marker::PhantomData;
 use machine::keyboard::{KeyCode, KeyDirection, KeyModifiers};
 use machine::instructions::interrupts::without_interrupts;
 use collections::vec::Vec;
+use collections::vec;
 use collections::allocator::{get_allocator, Allocator};
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
@@ -51,27 +52,30 @@ pub fn unhook_all_events(event_kind: EventKind) {
 #[derive(Clone, Copy, Debug)]
 pub enum Event {
     Timer,
-    Keyboard(KeyCode, KeyDirection, KeyModifiers)
+    Keyboard(KeyCode, KeyDirection, KeyModifiers),
+    Sound
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum EventKind {
     Timer,
-    Keyboard
+    Keyboard,
+    Sound
 }
 
 impl EventKind {
     fn from_event(event: Event) -> Self {
         match event {
             Event::Timer => EventKind::Timer,
-            Event::Keyboard(_, _, _) => EventKind::Keyboard
+            Event::Keyboard(_, _, _) => EventKind::Keyboard,
+            Event::Sound => EventKind::Sound
         }
     }
 }
 
 /// Acts as mediator between the interrupt service routines and the game code
 pub struct EventHooker<'a> {
-    handlers: [Vec<'a, Handler<'a>>; 2],
+    handlers: [Vec<'a, Handler<'a>>; 3],
     next_idx: usize
 }
 
@@ -82,11 +86,17 @@ impl<'a> EventHooker<'a> {
     const TIMER_INDEX: usize = 0;
     /// Index into the handlers field for keyboard handlers
     const KEYBOARD_INDEX: usize = 1;
+    /// Index into the handlers field for sound handlers
+    const SOUND_INDEX: usize = 2;
 
     /// Creates a new empty EventHooker
     pub fn new(allocator: &'a dyn Allocator) -> Self {
         EventHooker {
-            handlers: [Vec::with_capacity(1, allocator), Vec::with_capacity(1, allocator)],
+            handlers: [
+                Vec::with_capacity(1, allocator),
+                Vec::with_capacity(1, allocator),
+                Vec::with_capacity(1, allocator)
+            ],
             next_idx: 0
         }
     }
@@ -277,7 +287,8 @@ impl<'a> Index<EventKind> for EventHooker<'a> {
     fn index(&self, event: EventKind) -> &Self::Output {
         match event {
             EventKind::Timer => &self.handlers[Self::TIMER_INDEX],
-            EventKind::Keyboard => &self.handlers[Self::KEYBOARD_INDEX]
+            EventKind::Keyboard => &self.handlers[Self::KEYBOARD_INDEX],
+            EventKind::Sound => &self.handlers[Self::SOUND_INDEX]
         }
         
     }
@@ -287,7 +298,8 @@ impl<'a> IndexMut<EventKind> for EventHooker<'a> {
     fn index_mut(&mut self, event: EventKind) -> &mut Self::Output {
         match event {
             EventKind::Timer => &mut self.handlers[Self::TIMER_INDEX],
-            EventKind::Keyboard => &mut self.handlers[Self::KEYBOARD_INDEX]
+            EventKind::Keyboard => &mut self.handlers[Self::KEYBOARD_INDEX],
+            EventKind::Sound => &mut self.handlers[Self::SOUND_INDEX]
         }
     }
 }
