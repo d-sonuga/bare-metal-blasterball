@@ -110,7 +110,7 @@ pub extern "C" fn main() -> ! {
     
     //println!("{:?}", mmap);
 
-    setup_memory_and_run_game(stack_mem, heap_mem,mmap);
+    setup_memory_and_run_game(stack_mem, heap_mem);
 
     loop {}
 }

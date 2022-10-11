@@ -132,7 +132,7 @@ impl<'a> EventHooker<'a> {
     ///
     /// let mut event_hooker = EventHooker::new(&AlwaysSuccessfulAllocator);
     /// let idx = event_hooker.hook_event(EventKind::Timer, BoxedFn::new(|_| (), &AlwaysSuccessfulAllocator));
-    /// //assert_eq!(idx, 0);
+    /// assert_eq!(idx, 0);
     /// ```
     ///
     /// # Panics

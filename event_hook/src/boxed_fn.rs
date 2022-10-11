@@ -134,10 +134,11 @@ pub mod tests {
 
     #[test]
     fn test_box_fn_macro() {
+        let allocator = &AlwaysSuccessfulAllocator;
         let mut was_called = false;
         let f = box_fn!(|_| {
             was_called = true;
-        }, &AlwaysSuccessfulAllocator);
+        }, allocator);
         assert!(!was_called);
         f(Event::Timer);
         assert!(was_called);
@@ -195,8 +196,8 @@ pub mod tests {
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, size_to_dealloc: usize)  -> Result<(), Error> {
-           // let v: StdVec<u8> = StdVec::from_raw_parts(ptr, size_to_dealloc, size_to_dealloc);
-           // mem::drop(v);
+            let v: StdVec<u8> = StdVec::from_raw_parts(ptr, size_to_dealloc, size_to_dealloc);
+            mem::drop(v);
             Ok(())
         }
     }

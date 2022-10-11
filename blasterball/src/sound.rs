@@ -7,6 +7,7 @@ use num::{Integer, BitState};
 use collections::vec;
 use collections::vec::Vec;
 use sync::once::Once;
+use event_hook::{EventKind, box_fn};
 use crate::wav::WavFile;
 
 #[link_section = ".sound"]
@@ -17,10 +18,8 @@ static BOUNCE: [u8; 16140] = *include_bytes!("./assets/bounce.wav");
 #[link_section = ".sound"]
 static CLINK: [u8; 217536] = *include_bytes!("./assets/clink.wav");
 #[link_section = ".sound"]
-static DRUM: [u8; 734028] = *include_bytes!("./assets/drum.wav");
+pub static DRUM: [u8; 734028] = *include_bytes!("./assets/drum.wav");
 
-
-#[link_section = ".sound"]
 static mut SOUND_DEVICE: Option<SoundDevice> = None;
 
 unsafe impl Sync for SoundDevice {}
@@ -32,9 +31,9 @@ pub fn init() -> Result<(), &'static str> {
     Ok(())
 }
 
-pub fn play_sound(sound: &WavFile) {
-    let sd = unsafe { SOUND_DEVICE.as_mut().unwrap()};
-    sd.play_sound(&sound);
+pub fn play_sound(sound: &WavFile, action_on_end: &ActionOnEnd) {
+    let sd = unsafe { SOUND_DEVICE.as_mut().unwrap() };
+    sd.play_sound(&sound, action_on_end);
 
 /*
     use event_hook::box_fn;
@@ -187,6 +186,14 @@ impl OutputStream {
         while time < 1000 && self.regs.control.stream_reset() == true { time += 1; }
         self.bdl.clear_entries();
     }
+}
+
+/// Indicates the action to be taken when a stream
+/// has ended
+#[derive(Clone, Debug)]
+pub enum ActionOnEnd {
+    Stop = 1234,
+    Replay = 5678
 }
 
 /// The codec address and node id of a node in a codec
@@ -604,13 +611,36 @@ impl SoundDevice {
             beep_gen: None
         }
     }
-
-    fn play_sound(&mut self, sound: &WavFile) {
+    
+    // The action_on_end variable has to be a reference because of
+    // how Rust's closures work. The closure takes a references to the values
+    // it accesses in its scope. If the action_on_end argument is not a reference,
+    // the closure will take a reference to action_on_end, which won't live
+    // beyond this function's execution
+    fn play_sound(&mut self, sound: &WavFile, action_on_end: &ActionOnEnd) {
         // For some reason, this init function has to be called
         // again before playing a new stream
         self.output_stream.init();
         self.output_stream.setup_sound_stream(sound);
+        event_hook::hook_event(EventKind::Sound, box_fn!(|event| {
+            println!("Landed");
+            println!("{:?}", action_on_end);
+            match action_on_end {
+                ActionOnEnd::Stop => {
+                    self.output_stream.stop();
+                    self.output_stream.reset();
+                }
+                ActionOnEnd::Replay => {
+                    self.output_stream.stop();
+                    self.output_stream.reset();
+                    self.output_stream.init();
+                    self.output_stream.setup_sound_stream(sound);
+                    self.output_stream.start();
+                }
+            };
+        }));
         self.output_stream.start();
+        loop {}
     }
 
     fn set_beep_gen(&mut self, beep_node: NodeAddr) {
@@ -663,9 +693,7 @@ impl SoundDevice {
         // Widgets must be discovered before preparing to play sound
         self.discover_widgets();
         // Output stream must be initialized before preparing to play sound
-        //println!("Pre in start: {:?}");
         self.output_stream.init();
-        //println!("Post in start: {:?}");
         self.prepare_to_play_sound()?;
         Ok(())
     }

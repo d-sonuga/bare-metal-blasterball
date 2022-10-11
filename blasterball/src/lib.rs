@@ -22,12 +22,11 @@ use artist;
 use collections::allocator::get_allocator;
 
 mod sound;
-//mod sound1;
 mod wav;
 pub fn game_entry_point() -> ! {
     let music = wav::WavFile::from(&sound::MUSIC).unwrap();
     sound::init().unwrap();
-    sound::play_sound(&music);
+    sound::play_sound(&music, &sound::ActionOnEnd::Replay);
     println!("Loading...");
     loop {
         //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
