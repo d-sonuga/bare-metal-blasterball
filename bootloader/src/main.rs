@@ -33,7 +33,7 @@ macro_rules! Mem {
     ($n:expr, Kib) => { $n * 2u64.pow(10) };
 }
 
-const APP_STACK_SIZE: u64 = Mem!(40, Mib);
+const APP_STACK_SIZE: u64 = Mem!(10, Mib);
 
 const APP_HEAP_SIZE: u64 = Mem!(10, Mib);
 
@@ -71,10 +71,7 @@ fn setup_memory_and_run_game(stack_mem: MemChunk, heap_mem: MemChunk) -> ! {
     // the allocator
     allocator::init(heap_mem);
     interrupts::init();
-    /*for i in 5..10 {
-        println!("{:?}", mmap[i]);
-    }*/
-    //loop {}
+
     blasterball::game_entry_point();
     loop {}
 }

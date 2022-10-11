@@ -147,6 +147,40 @@ impl LinkedListAllocator {
             node_ptr_opt = (*curr_node_ptr).next;
         }
     }
+
+    unsafe fn iter(&self) -> FreeRegionIter {
+        if self.head.next.is_some() {
+            FreeRegionIter {
+                curr_node: Some(self.head.next.unwrap())
+            }
+        } else {
+            FreeRegionIter {
+                curr_node: None
+            }
+        }
+    }
+}
+
+struct FreeRegionIter {
+    curr_node: Option<*mut ListNode>
+}
+
+impl Iterator for FreeRegionIter {
+    type Item = MemChunk;
+    fn next(&mut self) -> Option<Self::Item> {
+        let curr_node = self.curr_node;
+        if let Some(node) = curr_node {
+            unsafe {
+                self.curr_node = (*node).next;
+                Some(MemChunk {
+                    start_addr: (*node).start_addr(),
+                    size: (*node).size
+                })
+            }
+        } else {
+            None
+        }
+    }
 }
 
 unsafe impl Allocator for Mutex<LinkedListAllocator> {
@@ -209,6 +243,54 @@ mod tests {
         
     }
 
+    #[test]
+    fn test_iter1() {
+        let allocator = get_4kib_allocator();
+        let mut iter = unsafe { allocator.iter() };
+        if let Some(MemChunk { size, .. }) = iter.next() {
+            assert_eq!(size as usize, four_kib);
+        }
+        assert_eq!(None, iter.next());
+    }
+
+    #[test]
+    fn test_iter2() {
+        let mut allocator = Mutex::new(get_4kib_allocator());
+        // 4 items of 4 bytes each
+        let allocd_ptr = unsafe { allocator.alloc(4, 4).unwrap() };
+        let mut iter = unsafe { allocator.lock().iter() };
+        if let Some(MemChunk { size, .. }) = iter.next() {
+            assert_eq!(size as usize, four_kib - 4 * 4);
+        }
+        assert_eq!(None, iter.next());
+
+        unsafe { allocator.dealloc(allocd_ptr, 4 * 4) };
+        let mut iter = unsafe { allocator.lock().iter() };
+        if let Some(MemChunk { size, .. }) = iter.next() {
+            assert_eq!(size as usize, four_kib);
+        }
+        assert_eq!(None, iter.next());
+    }
+
+    #[test]
+    fn test_iter3() {
+        #[derive(Clone)]
+        struct Struct(u32, u32, u32);
+        let mut allocator = Mutex::new(get_4kib_allocator());
+        let v: Vec<Struct> = Vec::with_capacity(5, &allocator);
+        let mut iter = unsafe { allocator.lock().iter() };
+        if let Some(MemChunk { size, .. }) = iter.next() {
+            assert_eq!(size as usize, four_kib - 5 * mem::size_of::<Struct>());
+        }
+        assert_eq!(None, iter.next());
+        mem::drop(v);
+        let mut iter = unsafe { allocator.lock().iter() };
+        if let Some(MemChunk { size, .. }) = iter.next() {
+            assert_eq!(size as usize, four_kib);
+        }
+        assert_eq!(None, iter.next());
+    }
+
     fn get_4kib_allocator() -> LinkedListAllocator {
         let mem: ManuallyDrop<StdVec<u8>> = ManuallyDrop::new(StdVec::with_capacity(four_kib));
         let mem_ptr = mem.as_ptr() as *mut u8;
@@ -226,4 +308,5 @@ mod tests {
         }
         return allocator;
     }
+
 }

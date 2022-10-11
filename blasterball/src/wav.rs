@@ -60,8 +60,8 @@ struct SampleDataChunk {
 }
 
 impl WavFile {
-    pub unsafe fn from(file: &'static [u8]) -> Result<WavFile, &'static str> {
-        let header = &*(file.as_ptr() as *const WavHeader);
+    pub fn from(file: &'static [u8]) -> Result<WavFile, &'static str> {
+        let header = unsafe { &*(file.as_ptr() as *const WavHeader) };
         validate_header(header)?;
         let data_ptr = find_data_chunk(file);
         if data_ptr.is_none() {
@@ -69,9 +69,9 @@ impl WavFile {
         }
         let data_ptr = data_ptr.unwrap();
         const RIFF_HEADER_SIZE: isize = mem::size_of::<RIFFChunkHeader>() as isize;
-        let data_chunk_header = data_ptr.cast::<RIFFChunkHeader>().read();
-        let sample_data_ptr = data_ptr.offset(RIFF_HEADER_SIZE);
-        let sample_data = core::slice::from_raw_parts(data_ptr.cast::<u16>(), (data_chunk_header.size / 2) as usize);
+        let data_chunk_header = unsafe { data_ptr.cast::<RIFFChunkHeader>().read() };
+        let sample_data_ptr = unsafe { data_ptr.offset(RIFF_HEADER_SIZE) };
+        let sample_data = unsafe { core::slice::from_raw_parts(data_ptr.cast::<u16>(), (data_chunk_header.size / 2) as usize) };
         Ok(Self {
             header,
             data: SampleDataChunk {
@@ -98,10 +98,9 @@ impl WavFile {
     }
 }
 
-unsafe fn find_data_chunk(file: &[u8]) -> Option<*const u8> {
-    let header = &*(file.as_ptr().cast::<RIFFChunkHeader>());
-    //let bytes = header.as_ptr().cast::<u8>().offset(HEADER_SIZE);
-    let bytes = core::slice::from_raw_parts(file.as_ptr(), header.size as usize);
+fn find_data_chunk(file: &[u8]) -> Option<*const u8> {
+    let header = unsafe { &*(file.as_ptr().cast::<RIFFChunkHeader>()) };
+    let bytes = unsafe { core::slice::from_raw_parts(file.as_ptr(), header.size as usize) };
     for chunk in bytes.array_windows::<4>() {
         // Chunk id of the data chunk is "data"
         if chunk == b"data" {
