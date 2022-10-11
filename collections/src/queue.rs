@@ -137,7 +137,7 @@ impl<'a, T: Clone> Drop for Queue<'a, T> {
         use core::ptr;
         unsafe {
             ptr::drop_in_place(ptr::slice_from_raw_parts_mut(self.start_ptr, self.len));
-            self.allocator.dealloc(self.start_ptr as *mut u8, self.capacity).unwrap()
+            self.allocator.dealloc(self.start_ptr as *mut u8, mem::size_of::<T>() * self.capacity).unwrap()
         };
     }
 }

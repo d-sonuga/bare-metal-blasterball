@@ -57,7 +57,7 @@ impl<'a, T: Clone> Vec<'a, T> {
             let new_start_ptr = alloc_result.unwrap() as *mut T;
             for i in 0..self.len {
                 unsafe {
-                    let val = self.start_ptr.offset(i as isize).read().clone();
+                    let val = self.start_ptr.offset(i as isize).read();
                     new_start_ptr.offset(i as isize).write(val);
                 }
             }
@@ -81,7 +81,7 @@ impl<'a, T: Clone> Vec<'a, T> {
             panic!("No items to pop");
         }
         self.len -= 1;
-        unsafe { (*self.start_ptr.offset(self.len as isize)).clone() }
+        unsafe { self.start_ptr.offset(self.len as isize).read() }
     }
 
     /// Removes the item at index idx and returns it
@@ -175,7 +175,7 @@ impl<'a, 'b, T: PartialEq + Clone> PartialEq<Vec<'b, T>> for Vec<'a, T> {
 
 impl<'a, T: Clone + fmt::Debug> fmt::Debug for Vec<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("Vec [\n")?;
+        f.write_str("Vec [ ")?;
         self.iter()
             .enumerate()
             .for_each(|(i, val)| {
