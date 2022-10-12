@@ -3,50 +3,38 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(unboxed_closures, fn_traits)]
 
-use core::ops::{Index, IndexMut};
+use core::ops::{Index, IndexMut, Deref, DerefMut};
 use core::clone::Clone;
 use core::marker::PhantomData;
 use machine::keyboard::{KeyCode, KeyDirection, KeyModifiers};
 use machine::instructions::interrupts::without_interrupts;
 use collections::vec::Vec;
-use collections::vec;
+use collections::queue::Queue;
+use collections::{vec, queue};
 use collections::allocator::{get_allocator, Allocator};
 use lazy_static::lazy_static;
-use sync::mutex::Mutex;
-use artist::println;
+use sync::mutex::{Mutex, MutexGuard};
 
 pub mod boxed_fn;
 use boxed_fn::BoxedFn;
 
-const NO_OF_EVENTS: u8 = 1;
 
+static mut EVENT_HOOKER: Option<EventHooker<'static>> = None;
 
-lazy_static! {
-    pub static ref EVENT_HOOKER: Mutex<EventHooker<'static>> = Mutex::new(EventHooker::new(get_allocator()));
+pub unsafe fn init() {
+    EVENT_HOOKER = Some(EventHooker::new(get_allocator()));
 }
 
-pub fn hook_event(event: EventKind, f: BoxedFn<'static>) -> usize {
-    without_interrupts(|| {
-        EVENT_HOOKER.lock().hook_event(event, f)
-    })
+pub fn hook_event(event: EventKind, f: BoxedFn<'static>) -> HandlerId {
+    unsafe { EVENT_HOOKER.as_mut().unwrap().hook_event(event, f) }
 }
 
-pub fn unhook_event(event_id: usize, event_kind: EventKind) -> Result<(), Error> {
-    without_interrupts(|| {
-        EVENT_HOOKER.lock().unhook_event(event_id, event_kind)
-    })
+pub fn unhook_event(event_id: HandlerId, event_kind: EventKind) {
+    unsafe { EVENT_HOOKER.as_mut().unwrap().unhook_event(event_id, event_kind); }
 }
 
 pub fn send_event(event: Event) {
-    without_interrupts(|| {
-        EVENT_HOOKER.lock().send_event(event);
-    });
-}
-
-pub fn unhook_all_events(event_kind: EventKind) {
-    without_interrupts(|| {
-        EVENT_HOOKER.lock().unhook_all_events(event_kind)
-    });
+    unsafe { EVENT_HOOKER.as_mut().unwrap().send_event(event); }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -72,6 +60,13 @@ impl EventKind {
         }
     }
 }
+
+/// Index into the EventHooker's handlers field for timer handlers
+const TIMER_INDEX: usize = 0;
+/// Index into the EventHooker's handlers field for keyboard handlers
+const KEYBOARD_INDEX: usize = 1;
+/// Index into the EventHooker's handlers field for sound handlers
+const SOUND_INDEX: usize = 2;
 
 /// Acts as mediator between the interrupt service routines and the game code
 ///
@@ -154,29 +149,34 @@ impl EventKind {
 /// the handlers lock is released. The same goes for the `hook_event`'s execution.
 pub struct EventHooker<'a> {
     /// The functions to be called when events take place
-    handlers: [Vec<'a, Handler<'a>>; 3],
+    handlers: Mutex<[Vec<'a, Handler<'a>>; 3]>,
     /// The next id to be used as a handler idx
-    next_idx: HandlerId
+    next_idx: HandlerId,
+    /// Hooks that were requested while the corresponding handlers
+    /// vector was locked
+    missed_hooks: Queue<'a, HookArgs<'a>>,
+    /// Unhook that were requested while the corresponding handlers
+    /// where locked
+    missed_unhooks: Queue<'a, UnhookArgs>,
+    /// Events that were sent while the corresponding handlers
+    /// where locked
+    missed_events: Queue<'a, Event>
 }
 
 unsafe impl<'a> Send for EventHooker<'a> {}
 
 impl<'a> EventHooker<'a> {
-    /// Index into the handlers field for timer handlers
-    const TIMER_INDEX: usize = 0;
-    /// Index into the handlers field for keyboard handlers
-    const KEYBOARD_INDEX: usize = 1;
-    /// Index into the handlers field for sound handlers
-    const SOUND_INDEX: usize = 2;
-
     /// Creates a new empty EventHooker
     pub fn new(allocator: &'a dyn Allocator) -> Self {
         EventHooker {
-            handlers: [
+            handlers: Mutex::new([
                 Vec::with_capacity(1, allocator),
                 Vec::with_capacity(1, allocator),
                 Vec::with_capacity(1, allocator)
-            ],
+            ]),
+            missed_events: queue!(item_type => Event, capacity => 3, allocator),
+            missed_hooks: queue!(item_type => HookArgs, capacity => 3, allocator),
+            missed_unhooks: queue!(item_type => UnhookArgs, capacity => 3, allocator),
             next_idx: 0
         }
     }
@@ -223,11 +223,21 @@ impl<'a> EventHooker<'a> {
     /// This function is highly unsafe. The BoxedFn can be a sort of trojan horse of
     /// unsafety because there is no way to tell if the closure or function in it
     /// takes any reference that doesn't live long enough or performs any unsafe
-    /// operations. Anything that `f` performs is completely opaque, with no way
+    /// operations. Anything that `func` performs is completely opaque, with no way
     /// to verify its safety
-    pub fn hook_event(&mut self, event_kind: EventKind, f: BoxedFn<'static>) -> usize {
+    pub fn hook_event(&mut self, event_kind: EventKind, func: BoxedFn<'a>) -> usize {
         let next_idx = self.next_idx;
-        self[event_kind].push(Handler { idx: next_idx, func: f });
+        if let Some(ref mut event_handlers) = self.handlers.try_lock() {
+            Self::hook(event_handlers, HookArgs { event_kind, handler_id: next_idx, func });
+            while let Some(missed_unhook) = self.missed_unhooks.dequeue() {
+                Self::unhook(event_handlers, missed_unhook);
+            }
+            while let Some(missed_event) = self.missed_events.dequeue() {
+                Self::event(event_handlers, missed_event);
+            }
+        } else {
+            self.missed_hooks.enqueue(HookArgs { event_kind, handler_id: next_idx, func });
+        }
         self.next_idx += 1;
         if self.next_idx == usize::MAX {
             panic!("next_idx has reached max");
@@ -270,16 +280,22 @@ impl<'a> EventHooker<'a> {
     /// event_hooker.send_event(Event::Timer);
     /// assert_eq!(x, 2);
     /// ```
-    pub fn send_event(&self, event: Event) {
-        let event_kind = EventKind::from_event(event);
-        for i in 0..self[event_kind].len() {
-            let handler = &self[event_kind][i];
-            (handler.func)(event);
+    pub fn send_event(&mut self, event: Event) {
+        if let Some(ref mut event_handlers) = self.handlers.try_lock() {
+            Self::event(event_handlers, event);
+            while let Some(missed_hook) = self.missed_hooks.dequeue() {
+                Self::hook(event_handlers, missed_hook);
+            }
+            while let Some(missed_unhook) = self.missed_unhooks.dequeue() {
+                Self::unhook(event_handlers, missed_unhook);
+            }
+        } else {
+            self.missed_events.enqueue(event);
         }
     }
 
     /// Removes a function with id idx related to a particular event.
-    /// If there is no function with id idx, an error is returned
+    /// If there is no function with id idx, no handler is removed
     ///
     /// Takes O(n) time, where n is the number of functions in the `event`'s vector because
     /// removing a function in an arbitrary position requires all the functions that come after
@@ -311,86 +327,101 @@ impl<'a> EventHooker<'a> {
     /// let mut event_hooker = EventHooker::new(&AlwaysSuccessfulAllocator);
     /// let mut x = 1;
     /// let idx = event_hooker.hook_event(EventKind::Timer, BoxedFn::new(|_| x += 1, &AlwaysSuccessfulAllocator));
-    /// let unhook_result = event_hooker.unhook_event(idx, EventKind::Timer);
-    /// assert_eq!(unhook_result, Ok(()));
-    /// let unhook_result = event_hooker.unhook_event(idx, EventKind::Timer);
-    /// assert_eq!(unhook_result, Err(EventHookError::IdxNotFound));
+    /// event_hooker.unhook_event(idx, EventKind::Timer);
+    /// event_hooker.send_event(Event::Timer);
+    /// assert_eq!(x, 1);
+    /// // The idx no longer corresponds to a handler, so this call is of no effect
+    /// event_hooker.unhook_event(idx, EventKind::Timer);
+    /// event_hooker.send_event(Event::Timer);
+    /// assert_eq!(x, 1);
     /// ```
-    pub fn unhook_event(&mut self, idx: usize, event_kind: EventKind) -> Result<(), Error> {
-        for i in 0..self[event_kind].len() {
-            let mut handler = &mut self[event_kind][i];
-            if handler.idx == idx {
-                self[event_kind].remove(i);
-                return Ok(());
+    pub fn unhook_event(&mut self, idx: HandlerId, event_kind: EventKind) {
+        if let Some(ref mut event_handlers) = self.handlers.try_lock() {
+            Self::unhook(event_handlers, UnhookArgs { event_kind, handler_id: idx });
+            while let Some(missed_hook) = self.missed_hooks.dequeue() {
+                Self::hook(event_handlers, missed_hook);
+            }
+            while let Some(missed_event) = self.missed_events.dequeue() {
+                Self::event(event_handlers, missed_event);
+            }
+        } else {
+            self.missed_unhooks.enqueue(UnhookArgs { event_kind, handler_id: idx });
+        }
+    }
+
+    fn handler_exists(&mut self, event_kind: EventKind, idx: HandlerId) -> Option<bool> {
+        if let Some(handlers) = self.handlers.try_lock() {
+            for i in 0..handlers[event_kind].len() {
+                if handlers[event_kind][i].idx == idx {
+                    return Some(true);
+                }
+            }
+            return Some(false);
+        } else {
+            return None;
+        }
+    }
+
+    fn event(handlers: &mut Handlers<'a>, event: Event) {
+        let event_kind = EventKind::from_event(event);
+        for i in 0..handlers[event_kind].len() {
+            let handler = &handlers[event_kind][i];
+            (handler.func)(event);
+        }
+    }
+
+    fn hook(handlers: &mut Handlers<'a>, args: HookArgs<'a>) {
+        handlers[args.event_kind].push(Handler { idx: args.handler_id, func: args.func });
+    }
+
+    fn unhook(handlers: &mut Handlers<'a>, args: UnhookArgs) {
+        for i in 0..handlers[args.event_kind].len() {
+            let mut handler = &mut handlers[args.event_kind][i];
+            if handler.idx == args.handler_id {
+                handlers[args.event_kind].remove(i);
+                break;
             }
         }
-        Err(Error::IdxNotFound)
-    }
-
-    /// Removes all functions related to a particular event.
-    ///
-    /// Takes O(n) time, where n is the number of functions in the `event`'s vector because
-    /// removing a function in an arbitrary position requires all the functions that come after
-    /// to be shifted backwards.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use collections::allocator::{Allocator, Error};
-    /// use std::vec::Vec as StdVec;
-    /// use core::mem::ManuallyDrop;
-    /// use core::mem;
-    /// use event_hook::{EventHooker, Event, EventKind};
-    /// use event_hook::boxed_fn::BoxedFn;
-    ///
-    /// pub struct AlwaysSuccessfulAllocator;
-    /// unsafe impl Allocator for AlwaysSuccessfulAllocator {
-    ///     unsafe fn alloc(&self, size_of_type: usize, size_to_alloc: usize) -> Result<*mut u8, Error> {
-    ///         let mut v: ManuallyDrop<StdVec<u8>> = ManuallyDrop::new(StdVec::with_capacity(size_of_type * size_to_alloc));
-    ///         Ok(v.as_mut_ptr() as *mut u8)
-    ///     }
-    ///     unsafe fn dealloc(&self, ptr: *mut u8, size_to_dealloc: usize)  -> Result<(), Error> {
-    ///         let v: StdVec<u8> = StdVec::from_raw_parts(ptr, size_to_dealloc, size_to_dealloc);
-    ///         mem::drop(v);
-    ///         Ok(())
-    ///     }
-    /// }
-    ///
-    /// let mut event_hooker = EventHooker::new(&AlwaysSuccessfulAllocator);
-    /// let idx = event_hooker.hook_event(EventKind::Timer, BoxedFn::new(|_| (), &AlwaysSuccessfulAllocator));
-    /// assert_eq!(event_hooker[EventKind::Timer].len(), 1);
-    /// event_hooker.unhook_all_events(EventKind::Timer);
-    /// assert_eq!(event_hooker[EventKind::Timer].len(), 0);
-    /// ```
-    pub fn unhook_all_events(&mut self, event_kind: EventKind) {
-        for _ in 0..self[event_kind].len() {
-            self[event_kind].pop();
-        }
     }
 }
 
-impl<'a> Index<EventKind> for EventHooker<'a> {
-    type Output = Vec<'a, Handler<'a>>;
+#[derive(Clone)]
+struct HookArgs<'a> {
+    event_kind: EventKind,
+    handler_id: HandlerId,
+    func: BoxedFn<'a>
+}
 
+#[derive(Clone)]
+struct UnhookArgs {
+    event_kind: EventKind,
+    handler_id: HandlerId 
+}
+
+
+type Handlers<'a> = [Vec<'a, Handler<'a>>; 3];
+
+impl<'a> Index<EventKind> for Handlers<'a> {
+    type Output = Vec<'a, Handler<'a>>;
     fn index(&self, event: EventKind) -> &Self::Output {
         match event {
-            EventKind::Timer => &self.handlers[Self::TIMER_INDEX],
-            EventKind::Keyboard => &self.handlers[Self::KEYBOARD_INDEX],
-            EventKind::Sound => &self.handlers[Self::SOUND_INDEX]
+            EventKind::Timer => &self[TIMER_INDEX],
+            EventKind::Keyboard => &self[KEYBOARD_INDEX],
+            EventKind::Sound => &self[SOUND_INDEX]
         }
-        
     }
 }
 
-impl<'a> IndexMut<EventKind> for EventHooker<'a> {
-    fn index_mut(&mut self, event: EventKind) -> &mut Self::Output {
-        match event {
-            EventKind::Timer => &mut self.handlers[Self::TIMER_INDEX],
-            EventKind::Keyboard => &mut self.handlers[Self::KEYBOARD_INDEX],
-            EventKind::Sound => &mut self.handlers[Self::SOUND_INDEX]
+impl<'a> IndexMut<EventKind> for Handlers<'a> {
+    fn index_mut(&mut self, event_kind: EventKind) -> &mut Self::Output {
+        match event_kind {
+            EventKind::Timer => &mut self[TIMER_INDEX],
+            EventKind::Keyboard => &mut self[KEYBOARD_INDEX],
+            EventKind::Sound => &mut self[SOUND_INDEX]
         }
     }
 }
+
 
 type HandlerId = usize;
 
@@ -412,29 +443,74 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::{Event, EventKind, EventHooker, HandlerId, BoxedFn};
     use collections::allocator::{Allocator, Error};
     use std::vec::Vec as StdVec;
     use core::mem::ManuallyDrop;
     use core::mem;
     use crate::box_fn;
-    
+
+    static mut EVENT_HOOKER: Option<EventHooker> = None;
+
+    fn init() {
+        unsafe { EVENT_HOOKER = Some(EventHooker::new(&AlwaysSuccessfulAllocator)); }
+    }
+
+    fn send_event(event: Event) {
+        unsafe {
+            EVENT_HOOKER.as_mut().unwrap().send_event(event)
+        }
+    }
+
+    fn hook_event(event_kind: EventKind, func: BoxedFn<'static>) -> HandlerId {
+        unsafe {
+            EVENT_HOOKER.as_mut().unwrap().hook_event(event_kind, func)
+        }
+    }
+
+    fn unhook_event(handler_id: HandlerId, event_kind: EventKind) {
+        unsafe {
+            EVENT_HOOKER.as_mut().unwrap().unhook_event(handler_id, event_kind);
+        }
+    }
+
     #[test]
-    fn test_unhook_only_removes_one_handler() {
-        let mut event_hooker = EventHooker::new(&AlwaysSuccessfulAllocator);
-        assert_eq!(event_hooker[EventKind::Timer].len(), 0);
-        let idx = event_hooker.hook_event(EventKind::Timer, box_fn!(|_| (), &AlwaysSuccessfulAllocator));
-        assert_eq!(event_hooker[EventKind::Timer].len(), 1);
-        let other_idx = event_hooker.hook_event(EventKind::Timer, box_fn!(|_| (), &AlwaysSuccessfulAllocator));
-        assert_eq!(event_hooker[EventKind::Timer].len(), 2);
-        event_hooker.unhook_event(other_idx, EventKind::Timer);
-        assert_eq!(event_hooker[EventKind::Timer].len(), 1);
-        assert_eq!(event_hooker[EventKind::Timer][0].idx, idx);
+    fn test_using_event_hooks_inside_event_hooks() {
+        init();
+        let mut x = 0;
+        let hook1_id = hook_event(EventKind::Timer, box_fn!(|_| {
+            // Executed in the first and second send_event execution
+            x += 1;
+        }, &AlwaysSuccessfulAllocator));
+        hook_event(EventKind::Timer, box_fn!(|_| {
+            // Executed in the first and second send_event execution
+            hook_event(EventKind::Timer, box_fn!(|_| {
+                unhook_event(hook1_id, EventKind::Timer);
+                // Executed in the second send_event execution
+                x += 1;
+            }, &AlwaysSuccessfulAllocator));
+            // Executed in the first and second send_event execution
+            x += 1;
+        }, &AlwaysSuccessfulAllocator));
+        send_event(Event::Timer);
+        assert_eq!(x, 2);
+
+        let hook1_id_in_handlers = unsafe { EVENT_HOOKER.as_mut().unwrap() }
+            .handler_exists(EventKind::Timer, hook1_id).unwrap();
+        assert!(hook1_id_in_handlers);
+
+        send_event(Event::Timer);
+        assert_eq!(x, 2 + 3);
+
+        let hook1_id_in_handlers = unsafe { EVENT_HOOKER.as_mut().unwrap() }
+            .handler_exists(EventKind::Timer, hook1_id).unwrap();
+        assert!(!hook1_id_in_handlers);
     }
 
     struct AlwaysSuccessfulAllocator;
     unsafe impl Allocator for AlwaysSuccessfulAllocator {
         unsafe fn alloc(&self, size_of_type: usize, size_to_alloc: usize) -> Result<*mut u8, Error> {
+            println!("Size of type: {}, size to alloc: {}", size_of_type, size_to_alloc);
             let mut v: ManuallyDrop<StdVec<u8>> = ManuallyDrop::new(StdVec::with_capacity(size_of_type * size_to_alloc));
             Ok(v.as_mut_ptr() as *mut u8)
         }
