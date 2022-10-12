@@ -71,7 +71,7 @@ impl<'a, T: Clone> Queue<'a, T> {
             let new_start_ptr = alloc_result.unwrap() as *mut T;
             for i in 0..self.len as isize {
                 unsafe {
-                    *new_start_ptr.offset(i) = self.dequeue().unwrap();
+                    new_start_ptr.offset(i).write(self.dequeue().unwrap());
                 }
             }
             unsafe { self.allocator.dealloc(old_start_ptr, old_size * mem::size_of::<T>()).unwrap() };
@@ -82,7 +82,7 @@ impl<'a, T: Clone> Queue<'a, T> {
             unsafe { self.back_ptr = self.start_ptr.offset(self.len as isize) };
         }
         unsafe {
-            *self.back_ptr = item;
+            self.back_ptr.write(item);
             // Items in the queue's chunk of memory can only be in indexes 0..=capacity - 1
             let after_last_pos_ptr = self.start_ptr.offset(self.capacity as isize);
             let new_back_ptr = self.back_ptr.offset(1);
@@ -144,7 +144,7 @@ impl<'a, T: Clone> Drop for Queue<'a, T> {
 
 #[macro_export]
 macro_rules! queue {
-    (item_type => $T:ty, capacity => $e:expr, allocator => $allocator:expr) => {
+    (item_type => $T:ty, capacity => $e:expr, $allocator:expr) => {
         {
             let queue: Queue<$T> = Queue::with_capacity($e, $allocator);
             queue
@@ -154,7 +154,7 @@ macro_rules! queue {
         {
             use $crate::allocator::get_allocator;
             let allocator = get_allocator();
-            queue!(item_type => $T, capacity => $e, allocator => allocator)
+            queue!(item_type => $T, capacity => $e, allocator)
         }
     }
 }
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn test_macro() {
         let allocator = &AlwaysSuccessfulAllocator;
-        let mut queue = crate::queue!(item_type => u8, capacity => 10, allocator => allocator);
+        let mut queue = crate::queue!(item_type => u8, capacity => 10, allocator);
         assert_eq!(queue.len(), 0);
         assert_eq!(queue.capacity(), 10);
         queue.enqueue(56);
