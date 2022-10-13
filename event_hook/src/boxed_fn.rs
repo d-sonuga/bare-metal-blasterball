@@ -16,13 +16,13 @@ use crate::Event;
 #[repr(C)]
 struct BaseFn {
     call_boxed: fn(*const BoxedFn, Event) -> (),
-    drop: fn(*const BoxedFn) -> ()
+    drop: fn(*const BoxedFn) -> (),
+    clone: fn(*const BoxedFn) -> BoxedFn
 }
 
 /// A stand in for `Box<dyn FnMut>`
 ///
 /// Main idea gotten from <https://adventures.michaelfbryan.com/posts/ffi-safe-polymorphism-in-rust/>
-#[derive(Clone)]
 pub struct BoxedFn<'a>(NonNull<BaseFn>, &'a dyn Allocator);
 
 impl<'a> BoxedFn<'a> {
@@ -30,7 +30,7 @@ impl<'a> BoxedFn<'a> {
     /// polymorphic BaseFn
     pub fn new<F>(func: F, allocator: &'a dyn Allocator) -> Self where F: FnMut(Event) {
         let concrete_repr = Repr {
-            base: BaseFn { call_boxed: call_boxed::<F>, drop: drop::<F> },
+            base: BaseFn { call_boxed: call_boxed::<F>, drop: drop::<F>, clone: clone::<F> },
             func
         };
         let concrete_repr_ptr: *mut Repr<F> = Box::<Repr<F>>::into_raw(Box::new(concrete_repr, allocator));
@@ -58,10 +58,34 @@ fn drop<F>(boxed_fn_ptr: *const BoxedFn) where F: FnMut(Event) {
     }
 }
 
+/// Clones the boxed function
+///
+/// # Safety
+///
+/// Cloning a BoxedFn is highly unsafe. The function may contains mutable
+/// references to the outer scope. Cloning the BoxedFn will result in cloning
+/// mutable references, defeating Rust's safety guarantees.
+fn clone<F>(boxed_fn_ptr: *const BoxedFn) -> BoxedFn where F: FnMut(Event) {
+    unsafe {
+        let base_fn_ptr = (*boxed_fn_ptr).0.as_ptr();
+        let concrete_ptr: *mut Repr<F> = base_fn_ptr.cast::<Repr<F>>();
+        let allocator = (*boxed_fn_ptr).1;
+        let func_ptr = &(*concrete_ptr).func as *const F;
+        BoxedFn::new(func_ptr.read(), allocator)
+    }
+}
+
 impl<'a> Drop for BoxedFn<'a> {
     fn drop(&mut self) {
         let base_fn_ptr = self.0.as_ptr();
         unsafe { ((*base_fn_ptr).drop)(self as *const BoxedFn) };
+    }
+}
+
+impl<'a> Clone for BoxedFn<'a> {
+    fn clone(&self) -> Self {
+        let base_fn_ptr = self.0.as_ptr();
+        unsafe { ((*base_fn_ptr).clone)(self as *const BoxedFn) }
     }
 }
 
@@ -181,6 +205,18 @@ pub mod tests {
             v.remove(1);
             assert_eq!(v.len(), 2);
         }
+    }
+
+    #[test]
+    fn test_clone() {
+        let allocator = &AlwaysSuccessfulAllocator;
+        let mut x = 0;
+        let f = box_fn!(|_| x += 1, allocator);
+        let g = f.clone();
+        core::mem::drop(f);
+        assert_eq!(x, 0);
+        g(Event::Timer);
+        assert_eq!(x, 1);
     }
 
     pub struct AlwaysSuccessfulAllocator;

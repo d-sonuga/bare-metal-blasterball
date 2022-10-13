@@ -84,6 +84,15 @@ impl<'a, T: Clone> Vec<'a, T> {
         unsafe { self.start_ptr.offset(self.len as isize).read() }
     }
 
+    /// Does the same as pop, but returns a None if the vector is empty
+    pub fn try_pop(&mut self) -> Option<T> {
+        if self.len == 0 {
+            None
+        } else {
+            Some(self.pop())
+        }
+    }
+
     /// Removes the item at index idx and returns it
     ///
     /// Running time is O(n) because all items after the item with index idx

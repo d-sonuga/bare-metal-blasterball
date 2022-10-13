@@ -16,13 +16,17 @@ use lazy_static::lazy_static;
 use sync::mutex::{Mutex, MutexGuard};
 
 pub mod boxed_fn;
-use boxed_fn::BoxedFn;
+pub use boxed_fn::BoxedFn;
 
 
 static mut EVENT_HOOKER: Option<EventHooker<'static>> = None;
 
-pub unsafe fn init() {
-    EVENT_HOOKER = Some(EventHooker::new(get_allocator()));
+pub fn init() {
+    unsafe {
+        if EVENT_HOOKER.is_none() {
+            EVENT_HOOKER = Some(EventHooker::new(get_allocator()));
+        }
+    }
 }
 
 pub fn hook_event(event: EventKind, f: BoxedFn<'static>) -> HandlerId {
@@ -423,7 +427,7 @@ impl<'a> IndexMut<EventKind> for Handlers<'a> {
 }
 
 
-type HandlerId = usize;
+pub type HandlerId = usize;
 
 /// A unique function in an vector associated with a particular event
 #[derive(Clone, Debug)]

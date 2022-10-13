@@ -71,6 +71,7 @@ fn setup_memory_and_run_game(stack_mem: MemChunk, heap_mem: MemChunk) -> ! {
     // the allocator
     allocator::init(heap_mem);
     interrupts::init();
+    event_hook::init();
 
     blasterball::game_entry_point();
     loop {}

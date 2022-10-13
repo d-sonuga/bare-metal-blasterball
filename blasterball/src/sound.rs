@@ -7,18 +7,25 @@ use num::{Integer, BitState};
 use collections::vec;
 use collections::vec::Vec;
 use sync::once::Once;
-use event_hook::{EventKind, box_fn};
+use event_hook::{EventKind, box_fn, HandlerId, BoxedFn};
 use crate::wav::WavFile;
 
 #[link_section = ".sound"]
 pub static MUSIC: [u8; 7287938] = *include_bytes!("./assets/canon-in-d-major.wav");
+const msb_size: usize = 7287938 / 2;
+#[link_section = ".sound"]
+static MUSIC_SAMPLE_BUFFER: [Sample; msb_size] = [Sample(0); msb_size];
 
 #[link_section = ".sound"]
 static BOUNCE: [u8; 16140] = *include_bytes!("./assets/bounce.wav");
 #[link_section = ".sound"]
 static CLINK: [u8; 217536] = *include_bytes!("./assets/clink.wav");
+
 #[link_section = ".sound"]
 pub static DRUM: [u8; 734028] = *include_bytes!("./assets/drum.wav");
+const dsb_size: usize = 734028 / 2;
+#[link_section = ".sound"]
+static DRUM_SAMPLE_BUFFER: [Sample; dsb_size] = [Sample(0); dsb_size];
 
 static mut SOUND_DEVICE: Option<SoundDevice> = None;
 
@@ -31,62 +38,20 @@ pub fn init() -> Result<(), &'static str> {
     Ok(())
 }
 
-pub fn play_sound(sound: &WavFile, action_on_end: &ActionOnEnd) {
+pub fn play_sound(sound: WavFile, action_on_end: ActionOnEnd) {
     let sd = unsafe { SOUND_DEVICE.as_mut().unwrap() };
-    sd.play_sound(&sound, action_on_end);
+    sd.play_sound(sound, action_on_end);
 
-/*
-    use event_hook::box_fn;
-    println!("Pre anything Lock: {:?}", event_hook::is_locked());
-    let music_end = box_fn!(|event| {
-        println!("In music_end Lock: {:?}", event_hook::is_locked());
-        stream.stop();
-        stream.reset();
-        stream.setup_sound_stream(&music);
-        stream.start();
-    });
-    let mut music_end_hook = event_hook::hook_event(event_hook::EventKind::Sound, music_end.clone());
-    */
-/*
-    let drum = WavFile::from(&DRUM).unwrap();
-    let mut drum_is_playing = false;
-    let mut time = 0;
-    let drum_end = box_fn!(|event| {
-        println!("In drum_end Lock: {:?}", event_hook::is_locked());
-        stream.stop();
-        stream.reset();
-        stream.setup_sound_stream(&music);
-        stream.start();
-        let me = music_end.clone();
-        music_end_hook = event_hook::hook_event(event_hook::EventKind::Sound, me);
-        //event_hook::unhook_event(drum_end, event_hook::EventKind::Sound);
-        drum_is_playing = false;
-        time = 0;
-    });
-    println!("Lock: {:?}", event_hook::is_locked());
-    loop {
-        if time > 1_000 {
-            if !drum_is_playing {
-                drum_is_playing = true;
-                println!("Pre unhook Lock: {:?}")
-                event_hook::unhook_event(music_end_hook, event_hook::EventKind::Sound);
-                println!("After unhook Lock: {:?}", event_hook::is_locked());
-                stream.stop();
-                stream.reset();
-                stream.setup_sound_stream(&drum);
-                //println!("Playing drum now");
-                stream.start();
-                println!("Pre hook drum_end Lock: {:?}", event_hook::is_locked());
-                event_hook::hook_event(event_hook::EventKind::Sound, drum_end.clone());
-                println!("Post hook drum_end Lock: {:?}", event_hook::is_locked());
-            }
-        } else {
-            time += 1;
-        }
-    }
-*/
 }
 
+pub fn stop_sound() -> Result<(), ()> {
+    let sd = unsafe { SOUND_DEVICE.as_mut().unwrap() };
+    sd.stop_sound()
+}
+
+fn get_sound_device() -> Option<&'static mut SoundDevice> {
+    unsafe { SOUND_DEVICE.as_mut() }
+}
 
 /// Searches all buses on the PCI until it finds the HDA
 ///
@@ -152,7 +117,7 @@ impl OutputStream {
         self.regs.set_bdl_base_addr(&self.bdl);
     }
 
-    fn setup_sound_stream(&mut self, sound: &WavFile) {
+    fn setup_sound_stream(&mut self, sound: WavFile) {
         let bdl_entry = BufferDescriptorListEntry {
             addr: sound.data_bytes().as_ptr().cast::<SampleBuffer>(),
             len: sound.data_bytes().len().as_u32(),
@@ -190,10 +155,11 @@ impl OutputStream {
 
 /// Indicates the action to be taken when a stream
 /// has ended
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum ActionOnEnd {
-    Stop = 1234,
-    Replay = 5678
+    Stop,
+    Replay,
+    Action(BoxedFn<'static>)
 }
 
 /// The codec address and node id of a node in a codec
@@ -580,15 +546,43 @@ impl PCIDevice {
     }
 }
 
+type SoundId = usize;
+
+/// Sound info of a preempted sound stream that will be used
+/// to replay the sound when the dominant stream finishes
+#[derive(Clone, Debug)]
+struct SoundInfo {
+    sound: WavFile,
+    action_on_end_hook_id: HandlerId,
+    sound_id: SoundId,
+    action_on_end: BoxedFn<'static>
+}
+
 /// A HDA sound device on the PCI bus
 struct SoundDevice {
+    /// The sound device's PCI interface
     pci_config: PCIDevice,
+    /// The pins attached to speakers that can be used to play sound
+    ///
+    /// This vector will be populated after starting the device
     output_pins: Vec<'static, Pin>,
+    /// The DACs connected to output pins that can be used
+    /// to set up a sound stream with the controller
     output_converters: Vec<'static, DAC>,
+    /// The addresses of valid codecs in the controller
     codec_addrs: Vec<'static, u8>,
+    /// Communicates with the controller with the CORB and RIRB
     commander: Commander,
+    /// A connection with a DAC through which sound samples
+    /// are channeled
     output_stream: OutputStream,
-    beep_gen: Option<NodeAddr>
+    /// A node that can generate beeps with the HDA beep commands
+    beep_gen: Option<NodeAddr>,
+    /// The sound id of the sound that is currently playing
+    ///
+    /// This corresponds to the handler id of the action_on_end event hook
+    /// that will be executed when the current sound stream ends
+    currently_playing_sound_id: Option<HandlerId>
 }
 
 impl SoundDevice {
@@ -608,39 +602,50 @@ impl SoundDevice {
             codec_addrs: vec!(item_type => u8, capacity => 15),
             commander: Commander::new(Self::corb_regs_mut_base(pci_config), Self::rirb_regs_mut_base(pci_config)),
             output_stream: OutputStream::new(Self::stream_descriptor_regs_mut_base(pci_config, 0).unwrap(), 1),
+            currently_playing_sound_id: None,
             beep_gen: None
         }
     }
     
-    // The action_on_end variable has to be a reference because of
-    // how Rust's closures work. The closure takes a references to the values
-    // it accesses in its scope. If the action_on_end argument is not a reference,
-    // the closure will take a reference to action_on_end, which won't live
-    // beyond this function's execution
-    fn play_sound(&mut self, sound: &WavFile, action_on_end: &ActionOnEnd) {
+    /// Plays a sound
+    ///
+    /// The returned SoundId is used to identify the sound to stop
+    fn play_sound(&mut self, sound: WavFile, action_on_end: ActionOnEnd) {
+        if self.currently_playing_sound_id.is_some() {
+            self.stop_sound().unwrap();
+        }
         // For some reason, this init function has to be called
         // again before playing a new stream
         self.output_stream.init();
         self.output_stream.setup_sound_stream(sound);
-        event_hook::hook_event(EventKind::Sound, box_fn!(|event| {
-            println!("Landed");
-            println!("{:?}", action_on_end);
-            match action_on_end {
-                ActionOnEnd::Stop => {
-                    self.output_stream.stop();
-                    self.output_stream.reset();
-                }
-                ActionOnEnd::Replay => {
-                    self.output_stream.stop();
-                    self.output_stream.reset();
-                    self.output_stream.init();
-                    self.output_stream.setup_sound_stream(sound);
-                    self.output_stream.start();
-                }
-            };
-        }));
+        //let action_on_end_hook_id = unsafe { event_hook::hook_event(EventKind::Sound, action_on_end) };
+        let action_on_end_hook_id = match action_on_end {
+            ActionOnEnd::Stop => event_hook::hook_event(EventKind::Sound, box_fn!(|_| {
+                stop_sound().unwrap();
+            })),
+            ActionOnEnd::Replay => event_hook::hook_event(EventKind::Sound, box_fn!(move |_| {
+                let mut sd = get_sound_device().unwrap();
+                sd.output_stream.stop();
+                sd.output_stream.reset();
+                sd.output_stream.init();
+                sd.output_stream.setup_sound_stream(sound);
+                sd.output_stream.start();
+            })),
+            ActionOnEnd::Action(func) => event_hook::hook_event(EventKind::Sound, func)
+        };
+        self.currently_playing_sound_id = Some(action_on_end_hook_id);
         self.output_stream.start();
-        loop {}
+    }
+
+    fn stop_sound(&mut self) -> Result<(), ()> {
+        if let Some(id) = self.currently_playing_sound_id.take() {
+            self.output_stream.stop();
+            self.output_stream.reset();
+            event_hook::unhook_event(id, EventKind::Sound);
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     fn set_beep_gen(&mut self, beep_node: NodeAddr) {

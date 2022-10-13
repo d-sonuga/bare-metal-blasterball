@@ -106,7 +106,7 @@ impl<'a, T: Clone> Queue<'a, T> {
             None
         } else {
             unsafe {
-                let val = self.front_ptr.read().clone();
+                let val = self.front_ptr.read();
                 self.front_ptr = self.front_ptr.offset(1);
                 // Items in the queue's chunk of memory can only be in indexes 0..=capacity - 1
                 let after_last_pos_ptr = self.start_ptr.offset(self.capacity as isize);

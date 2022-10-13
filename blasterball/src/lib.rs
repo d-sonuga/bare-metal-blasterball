@@ -26,8 +26,23 @@ mod wav;
 pub fn game_entry_point() -> ! {
     let music = wav::WavFile::from(&sound::MUSIC).unwrap();
     sound::init().unwrap();
-    sound::play_sound(&music, &sound::ActionOnEnd::Replay);
+    sound::play_sound(music, sound::ActionOnEnd::Replay);
+    let drum = wav::WavFile::from(&sound::DRUM).unwrap();
+    loop {
+        let mut time = 0;
+        loop {
+            if time >= 1_000_000_00 {
+                sound::stop_sound().unwrap();
+                sound::play_sound(drum, sound::ActionOnEnd::Action(box_fn!(|_| {
+                    sound::play_sound(music, sound::ActionOnEnd::Replay);
+                })));
+                break;
+            }
+            time += 1;
+        }
+    }
     println!("Loading...");
+    loop {}
     loop {
         //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
         let mut game = Game::init();
@@ -226,7 +241,7 @@ impl Game {
             self.artist.draw_on_screen_from_double_buffer();
         }
         //core::mem::drop(artist);
-        event_hook::unhook_event(game_hook, EventKind::Keyboard).unwrap();
+        event_hook::unhook_event(game_hook, EventKind::Keyboard);
     }
 
     fn move_paddle_in_double_buffer(&mut self, direction: PaddleDirection) {

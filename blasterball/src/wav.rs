@@ -1,6 +1,7 @@
 use core::{mem, slice};
 use artist::println;
 
+#[derive(Clone, Copy, Debug)]
 pub struct WavFile {
     header: &'static WavHeader,
     data: SampleDataChunk
@@ -13,6 +14,7 @@ pub struct WavFile {
 /// The file consists of chunks which have the format 4 bit ascii id, followed by
 /// a 32 bit integer which is the length of the chunk, 
 /// All ascii values are big-endian and all integer values are little endian
+#[derive(Debug)]
 #[repr(C)]
 struct WavHeader {
     file_chunk_header: RIFFChunkHeader,
@@ -44,6 +46,7 @@ struct WavHeader {
 }
 
 /// The beginning of every chunk in an RIFF file type
+#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 struct RIFFChunkHeader {
     /// A 4 byte ascii field that identifies the chunk
@@ -52,6 +55,7 @@ struct RIFFChunkHeader {
     size: u32
 }
 
+#[derive(Clone, Copy, Debug)]
 /// The RIFF chunk in a wav file that contains sample data
 #[repr(C)]
 struct SampleDataChunk {
