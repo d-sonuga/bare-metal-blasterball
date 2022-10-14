@@ -25,6 +25,7 @@ dependencies = [
  "machine",
  "num",
  "physics",
+ "sound",
  "sync",
  "tester",
 ]
@@ -40,6 +41,7 @@ dependencies = [
  "lazy_static",
  "machine",
  "num",
+ "sound",
  "sync",
  "tester",
 ]
@@ -92,6 +94,19 @@ name = "physics"
 version = "0.1.0"
 dependencies = [
  "num",
+]
+
+[[package]]
+name = "sound"
+version = "0.1.0"
+dependencies = [
+ "artist",
+ "collections",
+ "event_hook",
+ "lazy_static",
+ "machine",
+ "num",
+ "sync",
 ]
 
 [[package]]

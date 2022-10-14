@@ -15,6 +15,7 @@ sync = { path = "../sync" }
 collections = { path = "../collections" }
 event_hook = { path = "../event_hook" }
 num = { path = "../num" }
+sound = { path = "../sound" }
 
 [features]
 bios = ["artist/bios"]

@@ -7,6 +7,7 @@ use core::panic::PanicInfo;
 use core::fmt::Write;
 use machine::memory::MemMap;
 use machine::keyboard::{KeyCode, KeyDirection, KeyModifiers};
+use sound::{WavFile, Sound, Sample, ActionOnEnd};
 use machine::cmos;
 use machine;
 use event_hook;
@@ -20,28 +21,74 @@ use artist::{println, print, SCREEN_HEIGHT, SCREEN_WIDTH, Artist, Color, X_SCALE
 use artist::bitmap::{Bitmap, ScaledBitmap, Transparency};
 use artist;
 use collections::allocator::get_allocator;
+use lazy_static::{lazy_static, Deref};
 
-mod sound;
-mod wav;
-pub fn game_entry_point() -> ! {
-    let music = wav::WavFile::from(&sound::MUSIC).unwrap();
-    sound::init().unwrap();
-    sound::play_sound(music, sound::ActionOnEnd::Replay);
-    let drum = wav::WavFile::from(&sound::DRUM).unwrap();
-    loop {
-        let mut time = 0;
-        loop {
-            if time >= 1_000_000_00 {
-                sound::stop_sound().unwrap();
-                sound::play_sound(drum, sound::ActionOnEnd::Action(box_fn!(|_| {
-                    sound::play_sound(music, sound::ActionOnEnd::Replay);
-                })));
-                break;
+/*#[link_section = ".sound"]
+pub static MUSIC_: [u8; 7287938] = *include_bytes!("./assets/canon-in-d-major.wav");
+#[link_section = ".sound"]
+static BOUNCE: [u8; 16140] = *include_bytes!("./assets/bounce.wav");
+#[link_section = ".sound"]
+static CLINK: [u8; 217536] = *include_bytes!("./assets/clink.wav");
+#[link_section = ".sound"]
+pub static DRUM: [u8; 734028] = *include_bytes!("./assets/drum.wav");
+const msb_size: usize = 7287938 / 2;
+
+
+
+lazy_static! {
+    #[link_section = ".sound"]
+    static ref MUSIC: Sound /*[u8; 7287938]*/ = {
+        #[repr(C, align(128))]
+        struct SB([Sample; msb_size]);
+        impl core::ops::Deref for SB {
+            type Target = [Sample];
+            fn deref(&self) -> &Self::Target {
+                self.0.as_slice()
             }
-            time += 1;
+        }
+        impl core::ops::DerefMut for SB {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                self.0.as_mut_slice()
+            }
+        }
+        #[link_section = ".sound"]
+        static mut SAMPLE_BUFFER: SB = {
+            SB([Sample(0); msb_size])
+        };
+        let music = WavFile::from(&MUSIC_).unwrap();
+        let sound = sound::Sound::new(music, unsafe { &mut SAMPLE_BUFFER });
+        sound
+    };
+}
+*/
+//const dsb_size: usize = 734028 / 2;
+//#[link_section = ".sound"]
+//static DRUM_SAMPLE_BUFFER: [Sample; dsb_size] = [Sample(0); dsb_size];
+
+sound::sound!(MUSIC, RAW_MUSIC => "./assets/canon-in-d-major.wav", size => 7287938);
+sound::sound!(BOUNCE, RAW_BOUNCE => "./assets/bounce.wav", size => 16140);
+sound::sound!(CLINK, RAW_CLINK => "./assets/clink.wav", size => 217536);
+sound::sound!(DRUM, RAW_DRUM => "./assets/drum.wav", size => 734028);
+
+pub fn game_entry_point() -> ! {
+    sound::play_sound(MUSIC.deref(), sound::ActionOnEnd::Replay, 1);
+    println!("Loading...");
+    let mut time = 0;
+    loop {
+        time += 1;
+        if time == 100_000_000 {
+            sound::pause_sound(1);
+            time = 0;
+            break;
         }
     }
-    println!("Loading...");
+    loop {
+        time += 1;
+        if time == 100_000_000 {
+            sound::play_sound(MUSIC.deref(), ActionOnEnd::Replay, 1);
+            break;
+        }
+    }
     loop {}
     loop {
         //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
@@ -127,50 +174,61 @@ impl Game {
     fn main_loop(&mut self) {
         let game_hook = event_hook::hook_event(EventKind::Keyboard, box_fn!(|event| {
             if let Event::Keyboard(keycode, direction, modifiers) = event {
-                match keycode {
-                    KeyCode::ArrowRight => {
-                        if self.has_started && direction == KeyDirection::Down {
-                            if !paddle_collided_with_right_wall(&self.paddle_char) {
-                                self.move_paddle_in_double_buffer(PaddleDirection::Right);
+                if direction == KeyDirection::Down {
+                    match keycode {
+                        KeyCode::ArrowRight => {
+                            if self.has_started && direction == KeyDirection::Down {
+                                if !paddle_collided_with_right_wall(&self.paddle_char) {
+                                    self.move_paddle_in_double_buffer(PaddleDirection::Right);
+                                }
                             }
                         }
-                    }
-                    KeyCode::ArrowLeft => {
-                        if self.has_started && direction == KeyDirection::Down {
-                            if !paddle_collided_with_left_wall(&self.paddle_char) {
-                                self.move_paddle_in_double_buffer(PaddleDirection::Left);
+                        KeyCode::ArrowLeft => {
+                            if self.has_started && direction == KeyDirection::Down {
+                                if !paddle_collided_with_left_wall(&self.paddle_char) {
+                                    self.move_paddle_in_double_buffer(PaddleDirection::Left);
+                                }
                             }
                         }
-                    }
-                    KeyCode::Enter => {
-                        if !self.has_started {
-                            self.ball_char.object.velocity.direction = self.generate_direction();
-                            self.ball_char.object.velocity.speed = 5;
-                            self.has_started = true;
-                        } else if self.paused {
-                            self.paused = false;
-                            self.paused_msg_has_been_drawn = false;
+                        KeyCode::Enter => {
+                            if !self.has_started {
+                                self.ball_char.object.velocity.direction = self.generate_direction();
+                                self.ball_char.object.velocity.speed = 5;
+                                self.has_started = true;
+                                sound::play_sound(DRUM.deref(), ActionOnEnd::Replay, 1);
+                            } else if self.paused {
+                                self.paused = false;
+                                self.paused_msg_has_been_drawn = false;
+                                sound::play_sound(DRUM.deref(), ActionOnEnd::Replay, 1);
+                            }
+                            self.shutdown_attempted = false;
                         }
-                        self.shutdown_attempted = false;
-                    }
-                    KeyCode::Escape => {
-                        self.paused = true;
-                    }
-                    KeyCode::X => {
-                        if self.paused {
-                            if unsafe { machine::power::shutdown() }.is_err() {
-                                self.shutdown_attempted = true;
+                        KeyCode::Escape => {
+                            self.paused = true;
+                            sound::play_sound(MUSIC.deref(), ActionOnEnd::Replay, 1);
+                        }
+                        KeyCode::X => {
+                            if self.paused {
+                                if unsafe { machine::power::shutdown() }.is_err() {
+                                    self.shutdown_attempted = true;
+                                }
                             }
                         }
-                    }
-                    _ => ()
-                };
+                        _ => ()
+                    };
+                }
             }
         }));
         self.artist.draw_background_in_double_buffer(&self.background);
         self.draw_game_in_double_buffer();
         self.artist.draw_on_screen_from_double_buffer();
         self.artist.reset_writing_pos();
+        let post_bounce_played = box_fn!(|_| {
+            sound::play_sound(DRUM.deref(), ActionOnEnd::Replay, 1);
+        });
+        let post_clink_played = box_fn!(|_| {
+            sound::play_sound(DRUM.deref(), ActionOnEnd::Replay, 1);
+        });
         loop {
             if !self.has_started && !self.paused {
                 self.artist.write_str("Press enter to start\n");
@@ -202,18 +260,29 @@ impl Game {
                 break;
             }
             if ball_collided_with_left_wall(&self.ball_char) {
+                sound::pause_sound(1);
+                sound::play_sound(BOUNCE.deref(), ActionOnEnd::Action(box_fn!(|_| {
+                    sound::play_sound(DRUM.deref(), ActionOnEnd::Replay, 1);
+                })), 2);
                 // Need to consider the scenario where the direction is 180/0 degrees
                 self.ball_char.object.velocity.reflect_about_y_axis();
             } else if ball_collided_with_right_wall(&self.ball_char) {
+                sound::pause_sound(1);
+                sound::play_sound(BOUNCE.deref(), ActionOnEnd::Action(post_bounce_played.clone()), 2);
                 // Need to consider the scenario where the direction is 180/0 degrees
                 self.ball_char.object.velocity.reflect_about_y_axis();
             } else if ball_collided_with_ceiling(&self.ball_char) {
+                sound::pause_sound(1);
+                sound::play_sound(BOUNCE.deref(), ActionOnEnd::Action(post_bounce_played.clone()), 2);
                 // Need to consider the scenario where the direction is 270/90 degrees
                 self.ball_char.object.velocity.reflect_about_x_axis();
             } else if self.ball_char.collided_with(&self.paddle_char).0 {
+                sound::pause_sound(1);
+                sound::play_sound(BOUNCE.deref(), ActionOnEnd::Action(post_bounce_played.clone()), 2);
                 // Need to consider the scenario where the direction is 270/90 degrees
                 self.ball_char.object.velocity.reflect_about_x_axis();
             } else if ball_is_off_screen(&self.ball_char) {
+                sound::play_sound(MUSIC.deref(), ActionOnEnd::Replay, 1);
                 use core::fmt::Write;
                 self.artist.write_str("Game over\n");
                 self.artist.write_str("Press y to play again\n");
@@ -223,6 +292,8 @@ impl Game {
             for i in 0..self.blocks.len() {
                 let block_char = &self.blocks[i];
                 if self.ball_char.collided_with(block_char).0 {
+                    sound::pause_sound(1);
+                    sound::play_sound(CLINK.deref(), ActionOnEnd::Action(post_clink_played.clone()), 2);
                     self.artist.erase_scaled_bitmap_from_double_buffer(&block_char.repr, block_char.object.pos, &self.background);
                     self.ball_char.object.velocity.reflect_about_x_axis();
                     self.blocks.remove(i);

@@ -1,5 +1,9 @@
-use core::ops::{Index, IndexMut};
-use artist::{println, WriteTarget, print};
+#![no_std]
+#![feature(array_windows)]
+#![allow(unaligned_references, dead_code)]
+
+use core::ops::{Index, IndexMut, Deref, DerefMut};
+use core::fmt::Write;
 use machine::port::{Port, PortReadWrite};
 use machine::interrupts::IRQ;
 use machine::memory::Addr;
@@ -8,45 +12,45 @@ use collections::vec;
 use collections::vec::Vec;
 use sync::once::Once;
 use event_hook::{EventKind, box_fn, HandlerId, BoxedFn};
-use crate::wav::WavFile;
 
-#[link_section = ".sound"]
-pub static MUSIC: [u8; 7287938] = *include_bytes!("./assets/canon-in-d-major.wav");
-const msb_size: usize = 7287938 / 2;
-#[link_section = ".sound"]
-static MUSIC_SAMPLE_BUFFER: [Sample; msb_size] = [Sample(0); msb_size];
-
-#[link_section = ".sound"]
-static BOUNCE: [u8; 16140] = *include_bytes!("./assets/bounce.wav");
-#[link_section = ".sound"]
-static CLINK: [u8; 217536] = *include_bytes!("./assets/clink.wav");
-
-#[link_section = ".sound"]
-pub static DRUM: [u8; 734028] = *include_bytes!("./assets/drum.wav");
-const dsb_size: usize = 734028 / 2;
-#[link_section = ".sound"]
-static DRUM_SAMPLE_BUFFER: [Sample; dsb_size] = [Sample(0); dsb_size];
+mod wav;
+pub mod macros;
+pub use wav::WavFile;
+mod printer;
+mod font;
+use printer::Printer;
 
 static mut SOUND_DEVICE: Option<SoundDevice> = None;
 
 unsafe impl Sync for SoundDevice {}
 
 pub fn init() -> Result<(), &'static str> {
-    let mut sound_device = find_sound_device().ok_or("Couldn't find the sound device")?;
-    sound_device.start()?;
-    unsafe { SOUND_DEVICE = Some(sound_device); }
+    if unsafe { SOUND_DEVICE.is_none() } {
+        let mut sound_device = find_sound_device().ok_or("Couldn't find the sound device")?;
+        // The SOUND_DEVICE static must be initialized before starting
+        // to prevent registers in the sound controller from getting
+        // temporary stack addresses written to them
+        unsafe { SOUND_DEVICE = Some(sound_device) };
+        let mut sound_device = unsafe { SOUND_DEVICE.as_mut().unwrap() };
+        sound_device.start()?;
+    }
     Ok(())
 }
 
-pub fn play_sound(sound: WavFile, action_on_end: ActionOnEnd) {
-    let sd = unsafe { SOUND_DEVICE.as_mut().unwrap() };
-    sd.play_sound(sound, action_on_end);
+pub fn play_sound(sound: &Sound, action_on_end: ActionOnEnd, stream_id: StreamTag) {
+    let sd = get_sound_device().unwrap();
+    sd.play_sound(*sound, action_on_end, stream_id);
 
 }
 
-pub fn stop_sound() -> Result<(), ()> {
-    let sd = unsafe { SOUND_DEVICE.as_mut().unwrap() };
-    sd.stop_sound()
+pub fn stop_sound(stream_id: StreamTag) -> Result<(), ()> {
+    let sd = get_sound_device().unwrap();
+    sd.stop_sound(stream_id)
+}
+
+pub fn pause_sound(stream_tag: StreamTag) {
+    let sd = get_sound_device().unwrap();
+    sd.pause_sound(stream_tag);
 }
 
 fn get_sound_device() -> Option<&'static mut SoundDevice> {
@@ -78,7 +82,41 @@ fn find_sound_device() -> Option<SoundDevice> {
     None
 }
 
-type StreamTag = u8;
+type SampleDerefMut = &'static mut dyn DerefMut<Target=[Sample]>;
+
+#[derive(Clone, Copy)]
+pub struct Sound {
+    file: WavFile,
+    sample_buffer: &'static [Sample]
+}
+
+impl Sound {
+    fn sample_len(&self) -> usize {
+        self.sample_buffer.len()
+    }
+
+    fn sample_buffer_ptr(&self) -> *const Sample {
+        self.sample_buffer.as_ptr()
+    }
+}
+
+impl Sound {
+    pub fn new(file: WavFile, sample_buffer: SampleDerefMut) -> Self {
+        let sample_bytes = file.data_bytes();
+        let sample_bytes_len = sample_bytes.len();
+        let sample_ptr = sample_bytes.as_ptr();
+        for i in 0..sample_bytes_len {
+            unsafe { sample_buffer[i] = Sample(sample_ptr.offset(i.as_isize()).read())
+            };
+        }
+        Self {
+            file,
+            sample_buffer: sample_buffer
+        }
+    }
+}
+
+type StreamTag = usize;
 
 /// An output stream that represents a connection
 /// between sound sample buffers and the HDA sound controller
@@ -94,7 +132,7 @@ struct OutputStream {
 }
 
 impl OutputStream {
-    fn new(regs: &'static mut StreamDescriptorRegs, tag: u8) -> Self {
+    fn new(regs: &'static mut StreamDescriptorRegs, tag: StreamTag) -> Self {
         assert!(tag < 16);
         Self {
             regs,
@@ -112,15 +150,15 @@ impl OutputStream {
         self.regs.format.set_bits_per_sample(BitsPerSample::Sixteen);
         self.regs.format.set_number_of_channels(NumOfChannels::Two);
         self.regs.last_valid_index.set_last_valid_index(1);
-        self.regs.control.set_stream_number(self.tag);
+        self.regs.control.set_stream_number(self.tag.as_u8());
         self.regs.control.set_interrupt_on_completion_enable(true);
         self.regs.set_bdl_base_addr(&self.bdl);
     }
 
-    fn setup_sound_stream(&mut self, sound: WavFile) {
+    fn setup_sound_stream(&mut self, sound: Sound) {
         let bdl_entry = BufferDescriptorListEntry {
-            addr: sound.data_bytes().as_ptr().cast::<SampleBuffer>(),
-            len: sound.data_bytes().len().as_u32(),
+            addr: sound.sample_buffer_ptr(),
+            len: sound.sample_len().as_u32(),
             interrupt_on_completion: InterruptOnCompletion::new()
         };
         // BDL should be empty before starting a stream to make sure no
@@ -150,6 +188,10 @@ impl OutputStream {
         self.regs.control.exit_stream_reset();
         while time < 1000 && self.regs.control.stream_reset() == true { time += 1; }
         self.bdl.clear_entries();
+    }
+
+    fn has_initialized(&self) -> bool {
+        !self.regs.control.stream_reset() && self.bdl.no_of_entries() == 2
     }
 }
 
@@ -308,7 +350,7 @@ impl DAC {
     }
 
     fn unmute(&mut self, commander: &mut Commander) {
-        let amp_cap = self.output_amp_cap(commander);
+        //let amp_cap = self.output_amp_cap(commander);
         // Unmute DAC amplifier
         let amp_gain = AmpGain::new()
             .mute(false)
@@ -546,18 +588,6 @@ impl PCIDevice {
     }
 }
 
-type SoundId = usize;
-
-/// Sound info of a preempted sound stream that will be used
-/// to replay the sound when the dominant stream finishes
-#[derive(Clone, Debug)]
-struct SoundInfo {
-    sound: WavFile,
-    action_on_end_hook_id: HandlerId,
-    sound_id: SoundId,
-    action_on_end: BoxedFn<'static>
-}
-
 /// A HDA sound device on the PCI bus
 struct SoundDevice {
     /// The sound device's PCI interface
@@ -575,14 +605,16 @@ struct SoundDevice {
     commander: Commander,
     /// A connection with a DAC through which sound samples
     /// are channeled
-    output_stream: OutputStream,
+    output_streams: [OutputStream; 2],
     /// A node that can generate beeps with the HDA beep commands
     beep_gen: Option<NodeAddr>,
-    /// The sound id of the sound that is currently playing
+    /// The sound id of the sound that is currently playing in the
+    /// output streams
     ///
     /// This corresponds to the handler id of the action_on_end event hook
     /// that will be executed when the current sound stream ends
-    currently_playing_sound_id: Option<HandlerId>
+    currently_playing_sound_ids: [Option<HandlerId>; 2],
+    active_dac_index: Option<usize>
 }
 
 impl SoundDevice {
@@ -601,50 +633,77 @@ impl SoundDevice {
             output_converters: vec!(item_type => DAC, capacity => 10),
             codec_addrs: vec!(item_type => u8, capacity => 15),
             commander: Commander::new(Self::corb_regs_mut_base(pci_config), Self::rirb_regs_mut_base(pci_config)),
-            output_stream: OutputStream::new(Self::stream_descriptor_regs_mut_base(pci_config, 0).unwrap(), 1),
-            currently_playing_sound_id: None,
-            beep_gen: None
+            output_streams: [
+                OutputStream::new(Self::stream_descriptor_regs_mut_base(pci_config, 0).unwrap(), 1),
+                OutputStream::new(Self::stream_descriptor_regs_mut_base(pci_config, 1).unwrap(), 2)
+            ],
+            currently_playing_sound_ids: [None, None],
+            beep_gen: None,
+            active_dac_index: None
         }
     }
     
     /// Plays a sound
     ///
     /// The returned SoundId is used to identify the sound to stop
-    fn play_sound(&mut self, sound: WavFile, action_on_end: ActionOnEnd) {
-        if self.currently_playing_sound_id.is_some() {
-            self.stop_sound().unwrap();
+    fn play_sound(&mut self, sound: Sound, action_on_end: ActionOnEnd, stream_tag: StreamTag) {
+        assert!(stream_tag == 1 || stream_tag == 2);
+        /*if self.currently_playing_sound_ids[stream_tag - 1].is_some() {
+            self.stop_sound(stream_tag).unwrap();
+        }*/
+        for tag in 1..=2 {
+            if self.currently_playing_sound_ids[tag - 1].is_some() {
+                //self.stop_sound(tag).unwrap();
+            }
         }
+        //let mut dac = &mut self.output_converters[*self.active_dac_index.as_ref().unwrap()];
+        self.prepare_to_play_sound(stream_tag);
+        //dac.setup_stream_and_channel(&mut self.commander, stream_tag.as_u8(), 0);
+        //dac.set_converter_format(self.output_streams[stream_tag - 1].regs.format.reg_value(), &mut self.commander);
+        let mut output_stream = &mut self.output_streams[stream_tag - 1];
         // For some reason, this init function has to be called
         // again before playing a new stream
-        self.output_stream.init();
-        self.output_stream.setup_sound_stream(sound);
-        //let action_on_end_hook_id = unsafe { event_hook::hook_event(EventKind::Sound, action_on_end) };
+        if !output_stream.has_initialized() {
+            output_stream.init();
+            output_stream.setup_sound_stream(sound);
+        }
         let action_on_end_hook_id = match action_on_end {
-            ActionOnEnd::Stop => event_hook::hook_event(EventKind::Sound, box_fn!(|_| {
-                stop_sound().unwrap();
+            ActionOnEnd::Stop => event_hook::hook_event(EventKind::Sound, box_fn!(move |_| {
+                stop_sound(stream_tag).unwrap();
             })),
             ActionOnEnd::Replay => event_hook::hook_event(EventKind::Sound, box_fn!(move |_| {
                 let mut sd = get_sound_device().unwrap();
-                sd.output_stream.stop();
-                sd.output_stream.reset();
-                sd.output_stream.init();
-                sd.output_stream.setup_sound_stream(sound);
-                sd.output_stream.start();
+                sd.output_streams[stream_tag - 1].stop();
+                sd.output_streams[stream_tag - 1].reset();
+                sd.output_streams[stream_tag - 1].init();
+                sd.output_streams[stream_tag - 1].setup_sound_stream(sound);
+                sd.output_streams[stream_tag - 1].start();
             })),
             ActionOnEnd::Action(func) => event_hook::hook_event(EventKind::Sound, func)
         };
-        self.currently_playing_sound_id = Some(action_on_end_hook_id);
-        self.output_stream.start();
+        self.currently_playing_sound_ids[stream_tag - 1] = Some(action_on_end_hook_id);
+        output_stream.start();
+        static mut x: usize = 0;
+        unsafe { write!(Printer, "{}", x); }
+        unsafe { x+=1; }
     }
 
-    fn stop_sound(&mut self) -> Result<(), ()> {
-        if let Some(id) = self.currently_playing_sound_id.take() {
-            self.output_stream.stop();
-            self.output_stream.reset();
+    fn stop_sound(&mut self, stream_tag: StreamTag) -> Result<(), ()> {
+        if let Some(id) = self.currently_playing_sound_ids[stream_tag - 1].take() {
+            self.output_streams[stream_tag - 1].stop();
+            self.output_streams[stream_tag - 1].reset();
             event_hook::unhook_event(id, EventKind::Sound);
             Ok(())
         } else {
             Err(())
+        }
+    }
+
+    fn pause_sound(&mut self, stream_tag: StreamTag) {
+        assert!(stream_tag == 1 || stream_tag == 2);
+        self.output_streams[stream_tag - 1].stop();
+        if let Some(hook_id) = self.currently_playing_sound_ids[stream_tag - 1].take() {
+            event_hook::unhook_event(hook_id, EventKind::Sound);
         }
     }
 
@@ -682,6 +741,9 @@ impl SoundDevice {
         // Enable interrupts from output streams
         let num_of_input_streams = controller_regs.capabilities.num_of_input_streams();
         let num_of_output_streams = controller_regs.capabilities.num_of_output_streams();
+        if num_of_output_streams < 2 {
+            return Err("No enough output streams for sound operation");
+        }
         for stream_idx in 0..num_of_output_streams {
             // The output streams bits in the interrupt control reg
             // start after the input streams
@@ -698,22 +760,24 @@ impl SoundDevice {
         // Widgets must be discovered before preparing to play sound
         self.discover_widgets();
         // Output stream must be initialized before preparing to play sound
-        self.output_stream.init();
-        self.prepare_to_play_sound()?;
+        self.output_streams[0].init();
+        self.output_streams[1].init();
+        self.prepare_to_play_sound(1)?;
         Ok(())
     }
 
-    fn prepare_to_play_sound(&mut self) -> Result<(), &'static str> {
+    fn prepare_to_play_sound(&mut self, stream_tag: StreamTag) -> Result<(), &'static str> {
         if self.output_pins.len() == 0 {
             return Err("No suitable output pin found to play sound");
         }
-        let mut pin = self.output_pins[0].clone();
+        let mut pin = &mut self.output_pins[0];
         if pin.num_of_inputs(&mut self.commander) != 1 {
             return Err("The output pin has more than 1 connection");
         }
         let mut dac: Option<DAC> = None;
-        for dac_ in self.output_converters.iter() {
+        for (i, dac_) in self.output_converters.iter().enumerate() {
             if pin.conn_list_contains(dac_.addr) {
+                self.active_dac_index = Some(i);
                 dac = Some(*dac_);
                 break;
             }
@@ -721,8 +785,10 @@ impl SoundDevice {
         let mut dac = dac.ok_or("No output suitable DAC was found in the output pin connection list")?;
 
         dac.power_up(&mut self.commander);
-        dac.set_converter_format(self.output_stream.regs.format.reg_value(), &mut self.commander);
-        dac.setup_stream_and_channel(&mut self.commander, self.output_stream.tag, 0);
+        ///////
+        dac.set_converter_format(self.output_streams[stream_tag - 1].regs.format.reg_value(), &mut self.commander);
+        dac.setup_stream_and_channel(&mut self.commander, self.output_streams[stream_tag - 1].tag.as_u8(), 0);
+        ///////
 
         dac.unmute(&mut self.commander);
 
@@ -823,7 +889,11 @@ impl SoundDevice {
                                     conn_list.push(NodeAddr(codec_addr, connected_node_id.as_u8()));
                                 }
                             }
-                            self.output_pins.push(Pin::new(NodeAddr(codec_addr, widget_id), conn_list));
+                            let pin = Pin::new(NodeAddr(codec_addr, widget_id), conn_list);
+                            if pin.num_of_inputs(&mut self.commander) != 1 {
+                                continue;
+                            }
+                            self.output_pins.push(pin);
                         },
                         _ => ()
                     };
@@ -2385,7 +2455,7 @@ impl InterruptOnCompletion {
 struct BufferDescriptorListEntry {
     /// The starting address of the sample buffer, which
     /// must be 128 byte aligned
-    addr: *const SampleBuffer,
+    addr: *const Sample,
     /// The length of the buffer described in bytes
     len: u32,
     /// Interrupt on Completion
@@ -2398,7 +2468,7 @@ struct BufferDescriptorListEntry {
 }
 
 impl BufferDescriptorListEntry {
-    fn new(addr: *const SampleBuffer, len: usize) -> Self {
+    fn new(addr: *const Sample, len: usize) -> Self {
         assert!(len <= u32::MAX.as_usize());
         Self {
             addr,
@@ -2409,7 +2479,7 @@ impl BufferDescriptorListEntry {
 
     fn null() -> Self {
         Self {
-            addr: core::ptr::null_mut() as *mut SampleBuffer,
+            addr: core::ptr::null_mut() as *mut Sample,
             len: 0,
             interrupt_on_completion: InterruptOnCompletion::new()
         }
@@ -2459,6 +2529,10 @@ impl BufferDescriptorList {
     fn clear_entries(&mut self) {
         // No need to actually remove the entries
         self.next_index = 0;
+    }
+
+    fn no_of_entries(&self) -> usize {
+        self.next_index
     }
 }
 
@@ -3511,6 +3585,7 @@ impl CORB {
     }
 
     fn add_command(&mut self, command: HDANodeCommand) {
+        assert!(self.regs.control.corb_dma_engine_enabled());
         while self.regs.corbwp.write_pointer() != self.regs.corbrp.read_pointer() {}
         self.write_pointer = (self.write_pointer + 1) % self.size.entries_as_u16().as_usize();
         self.commands[self.write_pointer] = command;
@@ -3585,11 +3660,15 @@ impl RIRB {
     }
 
     fn read_next_response(&mut self) -> HDANodeResponse {
+        assert!(self.regs.control.rirb_dma_engine_enabled());
         // Wait for the responses to be written
         while self.regs.rirbwp.write_pointer() == self.read_pointer.as_u8() {}
         // The buffer is circular, so when the last entry is reached
         // the read pointer should wrap around
         self.read_pointer = (self.read_pointer + 1) % self.size.entries_as_u16().as_usize();
+        if self.read_pointer == 0 {
+            self.regs.rirbwp.reset_write_pointer();
+        }
         self.responses[self.read_pointer]
     }
 
@@ -3646,15 +3725,17 @@ impl Commander {
 
 /// A 16-bit sample container as specified in the HDA spec
 #[derive(Clone, Copy, Debug)]
-#[repr(align(2))]
-struct Sample(u16);
+#[repr(C, align(2))]
+pub struct Sample(pub u16);
 
+/*
 /// A buffer of samples
 ///
 /// A set of instances of this structure is what makes up
 /// the virtual cyclic buffer. The buffer descriptor list contains
 /// the descriptions of these buffers
-const NUM: usize = 160_000;
+
+const NUM: usize = msb_size;
 #[repr(C, align(128))]
 struct SampleBuffer {
     samples: [Sample; NUM]
@@ -3672,6 +3753,10 @@ impl SampleBuffer {
         Self { samples }
     }
 
+    fn len(&self) -> usize {
+        NUM
+    }
+
     fn bytes_len(&self) -> usize {
         NUM * core::mem::size_of::<Sample>()
     }
@@ -3679,4 +3764,21 @@ impl SampleBuffer {
     fn as_ptr(&self) -> *const Self {
         self as *const _
     }
+
+    fn as_slice(&self) -> &[Sample] {
+        self.samples.as_slice()
+    }
 }
+
+impl Index<usize> for SampleBuffer {
+    type Output = Sample;
+    fn index(&self, idx: usize) -> &Self::Output {
+        &self.samples[idx]
+    }
+}
+
+impl IndexMut<usize> for SampleBuffer {
+    fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
+        &mut self.samples[idx]
+    }
+}*/

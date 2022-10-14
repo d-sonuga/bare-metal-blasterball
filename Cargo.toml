@@ -10,7 +10,8 @@ members = [
     "sync",
     "collections",
     "event_hook",
-    "physics"
+    "physics",
+    "sound"
 ]
 
 exclude = [

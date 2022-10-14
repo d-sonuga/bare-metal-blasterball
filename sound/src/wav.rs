@@ -1,5 +1,4 @@
 use core::{mem, slice};
-use artist::println;
 
 #[derive(Clone, Copy, Debug)]
 pub struct WavFile {

@@ -1,18 +1,15 @@
 [package]
-name = "blasterball"
+name = "sound"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-artist = { path = "../artist" }
-tester = { path = "../tester" }
 machine = { path = "../machine" }
-event_hook = { path = "../event_hook" }
-physics = { path = "../physics" }
+num = { path = "../num" }
 collections = { path = "../collections" }
 sync = { path = "../sync" }
-num = { path = "../num" }
+event_hook = { path = "../event_hook" }
 lazy_static = { path = "../lazy_static" }
-sound = { path = "../sound" }
+artist = { path = "../artist" }

@@ -23,6 +23,7 @@ use machine::memory::{Addr, MemRegion, MemRegionType, AddrRange, MemAllocator, M
 use machine::memory;
 use artist::{println, clear_screen};
 use collections::allocator;
+use sound;
 use blasterball;
 use core::fmt::Write;
 
@@ -72,6 +73,7 @@ fn setup_memory_and_run_game(stack_mem: MemChunk, heap_mem: MemChunk) -> ! {
     allocator::init(heap_mem);
     interrupts::init();
     event_hook::init();
+    sound::init().unwrap();
 
     blasterball::game_entry_point();
     loop {}
