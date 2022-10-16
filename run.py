@@ -51,7 +51,8 @@ if __name__ == '__main__':
         'cargo', 'b', '-p', 'bootloader', '--target', target,
         '-Zbuild-std=core,compiler_builtins', '-Zbuild-std-features=compiler-builtins-mem',
     ]
-    base_qemu_args = ['qemu-system-x86_64', '-device', 'intel-hda,debug=4', '-device', 'hda-micro']
+    base_qemu_args = ['qemu-system-x86_64', 
+        '-device', 'ich9-intel-hda,debug=4', '-device', 'hda-micro', '-device', 'hda-micro']
     if args.debug:
         base_qemu_args += ['-S', '-s']
     if args.bios:

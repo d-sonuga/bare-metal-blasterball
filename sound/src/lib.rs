@@ -3,7 +3,6 @@
 #![allow(unaligned_references, dead_code)]
 
 use core::ops::{Index, IndexMut, Deref, DerefMut};
-use core::fmt::Write;
 use machine::port::{Port, PortReadWrite};
 use machine::interrupts::IRQ;
 use machine::memory::Addr;
@@ -37,22 +36,27 @@ pub fn init() -> Result<(), &'static str> {
     Ok(())
 }
 
-pub fn play_sound(sound: &Sound, action_on_end: ActionOnEnd, stream_id: StreamTag) {
+pub fn play_sound(sound: &Sound, action_on_end: ActionOnEnd) {
     let sd = get_sound_device().unwrap();
-    sd.play_sound(*sound, action_on_end, stream_id);
-
+    sd.play_sound(*sound, action_on_end);
 }
 
-pub fn stop_sound(stream_id: StreamTag) -> Result<(), ()> {
+pub fn stop_sound() -> Result<(), ()> {
     let sd = get_sound_device().unwrap();
-    sd.stop_sound(stream_id)
+    sd.stop_sound()
 }
 
+/*
 pub fn pause_sound(stream_tag: StreamTag) {
     let sd = get_sound_device().unwrap();
     sd.pause_sound(stream_tag);
 }
 
+pub fn resume_sound(stream_tag: StreamTag) {
+    let sd = get_sound_device().unwrap();
+    sd.resume_sound(stream_tag);
+}
+*/
 fn get_sound_device() -> Option<&'static mut SoundDevice> {
     unsafe { SOUND_DEVICE.as_mut() }
 }
@@ -215,17 +219,248 @@ impl NodeAddr {
     fn node_id(&self) -> u8 {
         self.1
     }
+    fn has_conn_list(&self, commander: &mut Commander) -> bool {
+        let cmd = HDANodeCommand::get_conn_list_len(self.0, self.1);
+        let resp = commander.command(cmd)
+            .get_conn_list_len_resp();
+        resp.is_ok()
+    }
+}
+
+impl Widget for NodeAddr {
+    fn addr(&self) -> Self {
+        *self
+    }
+}
+
+struct ConnectedNode {
+    addr: NodeAddr,
+    conn_list: Vec<'static, (u8, NodeAddr)>
+}
+
+impl ConnectedNode {
+    fn new(node: NodeAddr) -> Self {
+        Self {
+            addr: node,
+            conn_list: vec!(item_type => (u8, NodeAddr), capacity => 5)
+        }
+    }
+}
+
+impl Widget for ConnectedNode {
+    fn addr(&self) -> NodeAddr {
+        self.addr
+    }
+}
+
+impl NodeWithConnList for ConnectedNode {
+    fn conn_list(&self) -> &Vec<'static, (u8, NodeAddr)> {
+        &self.conn_list
+    }
+}
+
+trait Widget {
+    fn addr(&self) -> NodeAddr;
+
+    fn widget_cap(&self, commander: &mut Commander) -> HDANodeResponseAFGWidgetCap {
+        let NodeAddr(codec_addr, widget_id) = self.addr();
+        let afg_widget_cap_command = HDANodeCommand::afg_widget_capabilities(
+            codec_addr,
+            widget_id
+        );
+        let widget_cap_resp = commander
+            .command(afg_widget_cap_command)
+            .afg_widget_capabilities_resp()
+            .unwrap();
+        widget_cap_resp
+    }
+
+    fn widget_type(&self, commander: &mut Commander) -> HDAAFGWidgetType {
+        self.widget_cap(commander).widget_type()
+    }
+}
+
+trait NodeWithConnList: Widget {
+    fn conn_list(&self) -> &Vec<'static, (u8, NodeAddr)>;
+
+    fn conn_list_contains(&self, node_addr: NodeAddr) -> bool {
+        for (_, node) in self.conn_list().iter() {
+            if *node == node_addr {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn conn_list_idx(&self, node_addr: NodeAddr) -> Option<u8> {
+        for (idx, node) in self.conn_list().iter() {
+            if *node == node_addr {
+                return Some(*idx);
+            }
+        }
+        return None;
+    }
+
+    fn get_active_input(&self, commander: &mut Commander) -> GetConnSelCtrlResp {
+        let cmd = HDANodeCommand::get_conn_sel_ctrl(self.addr());
+        let resp = commander.command(cmd)
+            .get_conn_sel_ctrl_resp()
+            .unwrap();
+        resp
+    }
+
+    fn set_active_input(&mut self, idx: u8, commander: &mut Commander) {
+        let cmd = HDANodeCommand::set_conn_sel_ctrl(self.addr(), idx);
+        commander.command(cmd);
+    }
+}
+
+struct RootNode(u8);
+
+impl RootNode {
+    fn new(codec_addr: u8) -> Self {
+        RootNode(codec_addr)
+    }
+
+    fn func_group_nodes(&self, commander: &mut Commander) -> FuncGroupIter {
+        let get_node_count_command = HDANodeCommand::get_node_count(self.0, 0);
+        let node_count_resp = commander.command(get_node_count_command)
+            .node_count_resp()
+            .unwrap();
+        let start_node_id = node_count_resp.start_node_number();
+        FuncGroupIter {
+            start_node: NodeAddr(self.0, start_node_id),
+            num_of_nodes: node_count_resp.number_of_nodes(),
+            index: 0
+        }
+    }
+}
+
+struct FuncGroupIter {
+    start_node: NodeAddr,
+    num_of_nodes: u8,
+    index: u8
+}
+
+impl Iterator for FuncGroupIter {
+    type Item = FuncGroup;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.num_of_nodes {
+            None
+        } else {
+            let node = NodeAddr(
+                self.start_node.codec_addr(),
+                self.start_node.node_id() + self.index
+            );
+            self.index += 1;
+            Some(FuncGroup { addr: node })
+        }
+    }
+}
+
+struct FuncGroup {
+    addr: NodeAddr
+}
+
+impl FuncGroup {
+    fn grp_type(&self, commander: &mut Commander) -> HDANodeFunctionGroupType {
+        let func_group_type_command = HDANodeCommand::function_group_type(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        let func_group_type_resp = commander.command(func_group_type_command)
+            .func_group_type_resp()
+            .unwrap();
+        func_group_type_resp.node_type()
+    }
+
+    fn afg_cap(&self, commander: &mut Commander) -> AFGCapResp {
+        let afg_cap_command = HDANodeCommand::afg_capabilities(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        let afg_cap_resp = commander.command(afg_cap_command)
+            .afg_cap_resp()
+            .unwrap();
+        afg_cap_resp
+    }
+
+    fn has_beep_gen(&self, commander: &mut Commander) -> bool {
+        self.afg_cap(commander).has_beep_gen()
+    }
+
+    fn nodes(&self, commander: &mut Commander) -> NodeIter {
+        let get_node_count_command = HDANodeCommand::get_node_count(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        let node_count_resp = commander.command(get_node_count_command)
+            .node_count_resp()
+            .unwrap();
+        NodeIter {
+            start_node: NodeAddr(self.addr.codec_addr(), node_count_resp.start_node_number()),
+            num_of_nodes: node_count_resp.number_of_nodes(),
+            index: 0
+        }
+    }
+}
+
+struct NodeIter {
+    start_node: NodeAddr,
+    num_of_nodes: u8,
+    index: u8
+}
+
+impl Iterator for NodeIter {
+    type Item = NodeAddr;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.num_of_nodes {
+            None
+        } else {
+            let node = NodeAddr(
+                self.start_node.codec_addr(),
+                self.start_node.node_id() + self.index
+            );
+            self.index += 1;
+            Some(node)
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 struct Pin {
     addr: NodeAddr,
-    conn_list: Vec<'static, NodeAddr>
+    conn_list: Vec<'static, (u8, NodeAddr)>
 }
 
 impl Pin {
-    fn new(addr: NodeAddr, conn_list: Vec<'static, NodeAddr>) -> Self {
-        Self { addr, conn_list }
+    fn new(codec_addr: u8, node_id: u8) -> Self {
+        Self {
+            addr: NodeAddr(codec_addr, node_id),
+            conn_list: vec!(item_type => (u8, NodeAddr), capacity => 5)
+        }
+    }
+
+    fn pin_cap(&self, commander: &mut Commander) -> HDANodeResponsePinCapabilities {
+        let pin_cap_command = HDANodeCommand::get_pin_capabilities(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        let pin_cap = commander.command(pin_cap_command)
+            .pin_capabilities_resp()
+            .unwrap();
+        pin_cap
+    }
+
+    fn config_defaults(&self, commander: &mut Commander) -> HDANodeResponsePinConfigDefaults {
+        let pin_config_default_command = HDANodeCommand::get_pin_config_defaults(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        let config_defaults = commander.command(pin_config_default_command)
+            .get_pin_config_defaults_resp()
+            .unwrap();
+        config_defaults
     }
 
     fn enable(&mut self, commander: &mut Commander) {
@@ -306,13 +541,33 @@ impl Pin {
         commander.command(set_amp_gain_command);
     }
 
-    fn conn_list_contains(&self, node_addr: NodeAddr) -> bool {
-        for node in self.conn_list.iter() {
-            if *node == node_addr {
-                return true;
-            }
-        }
-        false
+    /*fn config_defaults(&self, commander: &mut Commander) -> HDANodeResponsePinConfigDefaults {
+        let pin_config_default_command = HDANodeCommand::get_pin_config_defaults(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        let config_defaults = commander.command(pin_config_default_command)
+            .get_pin_config_defaults_resp()
+            .unwrap();
+        config_defaults
+    }*/
+}
+
+impl NodeWithConnList for Pin {
+    fn conn_list(&self) -> &Vec<'static, (u8, NodeAddr)> {
+        &self.conn_list
+    }
+}
+
+impl Widget for Pin {
+    fn addr(&self) -> NodeAddr {
+        self.addr
+    }
+}
+
+impl From<NodeAddr> for Pin {
+    fn from(addr: NodeAddr) -> Self {
+        Self::new(addr.codec_addr(), addr.node_id())
     }
 }
 
@@ -401,6 +656,76 @@ impl DAC {
 impl PartialEq<NodeAddr> for DAC {
     fn eq(&self, rhs: &NodeAddr) -> bool {
         self.addr == *rhs
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Mixer {
+    addr: NodeAddr,
+    conn_list: Vec<'static, (u8, NodeAddr)>
+}
+
+impl Mixer {
+    fn new(codec_addr: u8, node_id: u8) -> Self {
+        Self {
+            addr: NodeAddr(codec_addr, node_id),
+            conn_list: vec!(item_type => (u8, NodeAddr), capacity => 5)
+        }
+    }
+
+    fn num_of_inputs(&self, commander: &mut Commander) -> u8 {
+        let conn_list_len_command = HDANodeCommand::get_conn_list_len(self.addr.codec_addr(), self.addr.node_id());
+        let resp = commander.command(conn_list_len_command)
+            .get_conn_list_len_resp()
+            .unwrap();
+        resp.conn_list_len()
+    }
+
+    fn power_ctrl_supported(&self, commander: &mut Commander) -> bool {
+        let afg_widget_cap = HDANodeCommand::afg_widget_capabilities(self.addr.codec_addr(), self.addr.node_id());
+        let resp = commander.command(afg_widget_cap)
+            .afg_widget_capabilities_resp()
+            .unwrap();
+        resp.power_ctrl_supported()
+    }    
+}
+
+impl NodeWithConnList for Mixer {
+    fn conn_list(&self) -> &Vec<'static, (u8, NodeAddr)> {
+        &self.conn_list
+    }
+}
+
+impl Widget for Mixer {
+    fn addr(&self) -> NodeAddr {
+        self.addr
+    }
+}
+
+impl From<NodeAddr> for Mixer {
+    fn from(addr: NodeAddr) -> Self {
+        Self::new(addr.codec_addr(), addr.node_id())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Selector {
+    addr: NodeAddr,
+    conn_list: Vec<'static, NodeAddr>
+}
+
+impl Selector {
+    fn new(codec_addr: u8, node_id: u8) -> Self {
+        Self {
+            addr: NodeAddr(codec_addr, node_id),
+            conn_list: vec!(item_type => NodeAddr, capacity => 5)
+        }
+    }
+}
+
+impl Widget for Selector {
+    fn addr(&self) -> NodeAddr {
+        self.addr
     }
 }
 
@@ -599,13 +924,15 @@ struct SoundDevice {
     /// The DACs connected to output pins that can be used
     /// to set up a sound stream with the controller
     output_converters: Vec<'static, DAC>,
+    /// The mixers for playing more than 1 stream at a time
+    mixers: Vec<'static, Mixer>,
     /// The addresses of valid codecs in the controller
     codec_addrs: Vec<'static, u8>,
     /// Communicates with the controller with the CORB and RIRB
     commander: Commander,
     /// A connection with a DAC through which sound samples
     /// are channeled
-    output_streams: [OutputStream; 2],
+    output_stream: OutputStream,
     /// A node that can generate beeps with the HDA beep commands
     beep_gen: Option<NodeAddr>,
     /// The sound id of the sound that is currently playing in the
@@ -613,8 +940,8 @@ struct SoundDevice {
     ///
     /// This corresponds to the handler id of the action_on_end event hook
     /// that will be executed when the current sound stream ends
-    currently_playing_sound_ids: [Option<HandlerId>; 2],
-    active_dac_index: Option<usize>
+    currently_playing_sound_id: Option<HandlerId>,
+    //active_dac_index: Option<usize>
 }
 
 impl SoundDevice {
@@ -631,42 +958,89 @@ impl SoundDevice {
             pci_config,
             output_pins: vec!(item_type => Pin, capacity => 10),
             output_converters: vec!(item_type => DAC, capacity => 10),
+            mixers: vec!(item_type => Mixer, capacity => 10),
             codec_addrs: vec!(item_type => u8, capacity => 15),
             commander: Commander::new(Self::corb_regs_mut_base(pci_config), Self::rirb_regs_mut_base(pci_config)),
-            output_streams: [
-                OutputStream::new(Self::stream_descriptor_regs_mut_base(pci_config, 0).unwrap(), 1),
-                OutputStream::new(Self::stream_descriptor_regs_mut_base(pci_config, 1).unwrap(), 2)
-            ],
-            currently_playing_sound_ids: [None, None],
-            beep_gen: None,
-            active_dac_index: None
+            output_stream: OutputStream::new(Self::stream_descriptor_regs_mut_base(pci_config, 0).unwrap(), 1),
+            currently_playing_sound_id: None,
+            beep_gen: None
         }
     }
     
     /// Plays a sound
     ///
     /// The returned SoundId is used to identify the sound to stop
-    fn play_sound(&mut self, sound: Sound, action_on_end: ActionOnEnd, stream_tag: StreamTag) {
+    fn play_sound(&mut self, sound: Sound, action_on_end: ActionOnEnd) {
+        if self.currently_playing_sound_id.is_some() {
+            self.stop_sound().unwrap();
+        }
+        let mut output_stream = &mut self.output_stream;
+        // For some reason, this init function has to be called
+        // again before playing a new stream
+        output_stream.init();
+        output_stream.setup_sound_stream(sound);
+        let action_on_end_hook_id = match action_on_end {
+            ActionOnEnd::Stop => event_hook::hook_event(EventKind::Sound, box_fn!(move |_| {
+                stop_sound().unwrap();
+            })),
+            ActionOnEnd::Replay => event_hook::hook_event(EventKind::Sound, box_fn!(move |_| {
+                let mut sd = get_sound_device().unwrap();
+                sd.output_stream.stop();
+                sd.output_stream.reset();
+                sd.output_stream.init();
+                sd.output_stream.setup_sound_stream(sound);
+                sd.output_stream.start();
+            })),
+            ActionOnEnd::Action(func) => event_hook::hook_event(EventKind::Sound, func)
+        };
+        self.currently_playing_sound_id = Some(action_on_end_hook_id);
+        output_stream.start();
+    }
+
+    fn stop_sound(&mut self) -> Result<(), ()> {
+        if let Some(id) = self.currently_playing_sound_id.take() {
+            self.output_stream.stop();
+            self.output_stream.reset();
+            event_hook::unhook_event(id, EventKind::Sound);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+/*
+    fn pause_sound(&mut self, stream_tag: StreamTag) {
         assert!(stream_tag == 1 || stream_tag == 2);
+        self.output_streams[stream_tag - 1].stop();
+        if let Some(hook_id) = self.currently_playing_sound_ids[stream_tag - 1].take() {
+            event_hook::unhook_event(hook_id, EventKind::Sound);
+        }
+    }
+
+    fn resume_sound(&mut self, stream_tag: StreamTag) {
+        assert!(stream_tag == 1 || stream_tag == 2);
+        let mut output_stream = &mut self.output_streams[stream_tag - 1];
+        output_stream.start();
         /*if self.currently_playing_sound_ids[stream_tag - 1].is_some() {
             self.stop_sound(stream_tag).unwrap();
         }*/
-        for tag in 1..=2 {
+        
+        /*for tag in 1..=2 {
             if self.currently_playing_sound_ids[tag - 1].is_some() {
-                //self.stop_sound(tag).unwrap();
+                self.stop_sound(tag).unwrap();
             }
-        }
+        }*/
         //let mut dac = &mut self.output_converters[*self.active_dac_index.as_ref().unwrap()];
-        self.prepare_to_play_sound(stream_tag);
+        //self.prepare_to_play_sound(stream_tag);
         //dac.setup_stream_and_channel(&mut self.commander, stream_tag.as_u8(), 0);
         //dac.set_converter_format(self.output_streams[stream_tag - 1].regs.format.reg_value(), &mut self.commander);
-        let mut output_stream = &mut self.output_streams[stream_tag - 1];
+        //let mut output_stream = &mut self.output_streams[stream_tag - 1];
         // For some reason, this init function has to be called
         // again before playing a new stream
-        if !output_stream.has_initialized() {
+        /*if !output_stream.has_initialized() {
             output_stream.init();
             output_stream.setup_sound_stream(sound);
-        }
+        }*/
+        /*
         let action_on_end_hook_id = match action_on_end {
             ActionOnEnd::Stop => event_hook::hook_event(EventKind::Sound, box_fn!(move |_| {
                 stop_sound(stream_tag).unwrap();
@@ -680,33 +1054,11 @@ impl SoundDevice {
                 sd.output_streams[stream_tag - 1].start();
             })),
             ActionOnEnd::Action(func) => event_hook::hook_event(EventKind::Sound, func)
-        };
-        self.currently_playing_sound_ids[stream_tag - 1] = Some(action_on_end_hook_id);
-        output_stream.start();
-        static mut x: usize = 0;
-        unsafe { write!(Printer, "{}", x); }
-        unsafe { x+=1; }
+        };*/
+        //self.currently_playing_sound_ids[stream_tag - 1] = Some(action_on_end_hook_id);
+        //output_stream.start();
     }
-
-    fn stop_sound(&mut self, stream_tag: StreamTag) -> Result<(), ()> {
-        if let Some(id) = self.currently_playing_sound_ids[stream_tag - 1].take() {
-            self.output_streams[stream_tag - 1].stop();
-            self.output_streams[stream_tag - 1].reset();
-            event_hook::unhook_event(id, EventKind::Sound);
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-
-    fn pause_sound(&mut self, stream_tag: StreamTag) {
-        assert!(stream_tag == 1 || stream_tag == 2);
-        self.output_streams[stream_tag - 1].stop();
-        if let Some(hook_id) = self.currently_playing_sound_ids[stream_tag - 1].take() {
-            event_hook::unhook_event(hook_id, EventKind::Sound);
-        }
-    }
-
+*/
     fn set_beep_gen(&mut self, beep_node: NodeAddr) {
         self.beep_gen = Some(beep_node);
     }
@@ -760,35 +1112,32 @@ impl SoundDevice {
         // Widgets must be discovered before preparing to play sound
         self.discover_widgets();
         // Output stream must be initialized before preparing to play sound
-        self.output_streams[0].init();
-        self.output_streams[1].init();
+        self.output_stream.init();
         self.prepare_to_play_sound(1)?;
         Ok(())
     }
 
     fn prepare_to_play_sound(&mut self, stream_tag: StreamTag) -> Result<(), &'static str> {
-        if self.output_pins.len() == 0 {
-            return Err("No suitable output pin found to play sound");
+        if self.output_pins.len() < 1 {
+            return Err("No enough output pins to play sound");
+        }
+        if self.output_converters.len() < 1 {
+            return Err("No enough output converters to play sound");
         }
         let mut pin = &mut self.output_pins[0];
-        if pin.num_of_inputs(&mut self.commander) != 1 {
-            return Err("The output pin has more than 1 connection");
-        }
         let mut dac: Option<DAC> = None;
         for (i, dac_) in self.output_converters.iter().enumerate() {
             if pin.conn_list_contains(dac_.addr) {
-                self.active_dac_index = Some(i);
                 dac = Some(*dac_);
                 break;
             }
         }
+
         let mut dac = dac.ok_or("No output suitable DAC was found in the output pin connection list")?;
 
         dac.power_up(&mut self.commander);
-        ///////
-        dac.set_converter_format(self.output_streams[stream_tag - 1].regs.format.reg_value(), &mut self.commander);
-        dac.setup_stream_and_channel(&mut self.commander, self.output_streams[stream_tag - 1].tag.as_u8(), 0);
-        ///////
+        dac.set_converter_format(self.output_stream.regs.format.reg_value(), &mut self.commander);
+        dac.setup_stream_and_channel(&mut self.commander, self.output_stream.tag.as_u8(), 0);
 
         dac.unmute(&mut self.commander);
 
@@ -798,101 +1147,41 @@ impl SoundDevice {
         if pin.power_ctrl_supported(&mut self.commander) {
             pin.power_up(&mut self.commander);
         }
+
         Ok(())
     }
 
     fn discover_widgets(&mut self) {
         for i in 0..self.codec_addrs.len() {
             let codec_addr = self.codec_addrs[i];
-            // Gettings function group info from the root node
-            let get_node_count_command = HDANodeCommand::get_node_count(codec_addr, 0);
-            let node_count_resp = self.commander.command(get_node_count_command)
-                .node_count_resp()
-                .unwrap();
-            let first_func_group_id = node_count_resp.start_node_number();
-            
-            for func_group_id in first_func_group_id..first_func_group_id + node_count_resp.number_of_nodes() {
-                // Checking if the function group is an AFG
-                let func_group_type_command = HDANodeCommand::function_group_type(codec_addr, func_group_id);
-                let func_group_type_resp = self.commander.command(func_group_type_command)
-                    .func_group_type_resp()
-                    .unwrap();
-                if func_group_type_resp.node_type() != HDANodeFunctionGroupType::AFG {
+            let root_node = RootNode::new(codec_addr);
+            for func_group in root_node.func_group_nodes(&mut self.commander) {
+                if func_group.grp_type(&mut self.commander) != HDANodeFunctionGroupType::AFG {
                     continue;
                 }
-
-                let afg_cap_command = HDANodeCommand::afg_capabilities(codec_addr, func_group_id);
-                let afg_cap_resp = self.commander.command(afg_cap_command)
-                    .afg_cap_resp()
-                    .unwrap();
-                if afg_cap_resp.has_beep_gen() {
-                    self.set_beep_gen(NodeAddr(codec_addr, func_group_id));
+                if func_group.has_beep_gen(&mut self.commander) {
+                    self.set_beep_gen(NodeAddr(codec_addr, func_group.addr.node_id()));
                 }
-                
-                // Getting the number of widgets in the AFG
-                let get_node_count_command = HDANodeCommand::get_node_count(codec_addr, func_group_id);
-                let node_count_resp = self.commander.command(get_node_count_command)
-                    .node_count_resp()
-                    .unwrap();
-                let start_widget_id = node_count_resp.start_node_number();
-
-                for widget_id in start_widget_id..start_widget_id + node_count_resp.number_of_nodes() {
-                    let afg_widget_cap_command = HDANodeCommand::afg_widget_capabilities(codec_addr, widget_id);
-                    let widget_cap_resp = self.commander
-                        .command(afg_widget_cap_command)
-                        .afg_widget_capabilities_resp()
-                        .unwrap();
-                    
-                    match widget_cap_resp.widget_type() {
+                for node in func_group.nodes(&mut self.commander) {
+                    match node.widget_type(&mut self.commander) {
                         HDAAFGWidgetType::AudioOutput => {
-                            self.output_converters.push(
-                                DAC::new(NodeAddr(codec_addr, widget_id))
-                            );
-                        },
+                            self.output_converters.push(DAC::new(node));
+                        }
+                        HDAAFGWidgetType::AudioMixer => {
+                            let mut mixer = Mixer::new(codec_addr, node.addr().node_id());
+                            build_conn_list(mixer.addr, &mut mixer.conn_list, &mut self.commander);
+                            self.mixers.push(mixer);
+                        }
                         HDAAFGWidgetType::PinComplex => {
-                            let pin_cap_command = HDANodeCommand::get_pin_capabilities(codec_addr, widget_id);
-                            let pin_cap = self.commander.command(pin_cap_command)
-                                .pin_capabilities_resp()
-                                .unwrap();
-                            if !pin_cap.output_capable() {
-                                continue;
-                            }
-                            let pin_config_default_command = HDANodeCommand::get_pin_config_defaults(codec_addr, widget_id);
-                            let config_defaults = self.commander.command(pin_config_default_command)
-                                .get_pin_config_defaults_resp()
-                                .unwrap();
+                            let mut pin = Pin::new(codec_addr, node.addr().node_id());
+                            let pin_cap = pin.pin_cap(&mut self.commander);
+                            if !pin_cap.output_capable() { continue; }
+                            let config_defaults = pin.config_defaults(&mut self.commander);
                             if !(config_defaults.port_connectivity() != PortConnectivity::None
                                 && config_defaults.default_device() == DefaultDevice::Speaker) {
                                     continue;
                                 }
-                            let mut conn_list = vec!(item_type => NodeAddr, capacity => 5);
-                            let get_conn_list_command = HDANodeCommand::get_conn_list_len(codec_addr, widget_id);
-                            let conn_list_len_resp = self.commander.command(get_conn_list_command)
-                                .get_conn_list_len_resp()
-                                .unwrap();
-                            // To find the entries in the pin's connection list
-                            let mut conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(4);
-                            let mut no_in_batch = 4;
-                            if conn_list_len_resp.long_form() {
-                                conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(2);
-                                no_in_batch = 2;
-                            }
-                            for conn_idx in conn_list_index_iter {
-                                let get_conn_list_entry_command = HDANodeCommand::get_conn_list_entry(codec_addr, widget_id, conn_idx);
-                                let get_conn_list_entry_resp = self.commander.command(get_conn_list_entry_command)
-                                    .get_conn_list_entry_resp(conn_list_len_resp.long_form())
-                                    .unwrap();
-                                
-                                // Looking for a DAC connected to the pin
-                                for connected_node_id in get_conn_list_entry_resp.entries() {
-                                    assert!((connected_node_id & 0xff) == connected_node_id.as_u8().as_u16());
-                                    conn_list.push(NodeAddr(codec_addr, connected_node_id.as_u8()));
-                                }
-                            }
-                            let pin = Pin::new(NodeAddr(codec_addr, widget_id), conn_list);
-                            if pin.num_of_inputs(&mut self.commander) != 1 {
-                                continue;
-                            }
+                            build_conn_list(pin.addr, &mut pin.conn_list, &mut self.commander);
                             self.output_pins.push(pin);
                         },
                         _ => ()
@@ -1023,6 +1312,39 @@ impl SoundDevice {
         let ptr = ptr.unwrap();
         Some(unsafe { &mut *ptr })
     }
+}
+
+fn build_conn_list(node: NodeAddr, conn_list: &mut Vec<(u8, NodeAddr)>, commander: &mut Commander) -> Result<(), ()> {
+    let get_conn_list_command = HDANodeCommand::get_conn_list_len(node.codec_addr(), node.node_id());
+    let conn_list_len_resp = commander.command(get_conn_list_command)
+        .get_conn_list_len_resp();
+    if conn_list_len_resp.is_err() { return Err(()); }
+    let conn_list_len_resp = conn_list_len_resp.unwrap();
+    
+    let mut conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(4);
+    let mut no_in_batch = 4;
+    if conn_list_len_resp.long_form() {
+        conn_list_index_iter = (0..conn_list_len_resp.conn_list_len()).step_by(2);
+        no_in_batch = 2;
+    }
+    for conn_idx in conn_list_index_iter {
+        let get_conn_list_entry_command = HDANodeCommand::get_conn_list_entry(
+            node.codec_addr(),
+            node.node_id(),
+            conn_idx
+        );
+        let get_conn_list_entry_resp = commander.command(get_conn_list_entry_command)
+            .get_conn_list_entry_resp(conn_list_len_resp.long_form())
+            .unwrap();
+        
+        for (entry_idx, connected_node_id) in get_conn_list_entry_resp.entries().enumerate() {
+            assert!((connected_node_id & 0xff) == connected_node_id.as_u8().as_u16());
+            conn_list.push(
+                (conn_idx * no_in_batch + entry_idx.as_u8(), NodeAddr(node.codec_addr(), connected_node_id.as_u8()))
+            );
+        }
+    }
+    return Ok(())
 }
 
 impl SoundDevice {
@@ -1489,7 +1811,7 @@ impl HDACORBReadPointerReg {
     /// The offset of the last command in the CORB which
     /// the controller has successfully read
     fn read_pointer(&self) -> u8 {
-        self.0.get_bits(0..8).as_u8()
+        (self.0.get_bits(0..8) & 0xff).as_u8()
     }
 }
 
@@ -2567,6 +2889,8 @@ impl HDANodeCommandVerb {
     const SET_CONVERTER_CONTROL4: u32 = 0x73f;
     const SET_EAPD_ENABLE: u32 = 0x70c;
     const GET_EAPD_ENABLE: u32 = 0xf0c;
+    const GET_CONN_SEL_CTRL: u32 = 0xf01;
+    const SET_CONN_SEL_CTRL: u32 = 0x701;
     
     fn get_parameter(param_id: u8) -> Self {
         let mut val = 0u32;
@@ -2681,6 +3005,19 @@ impl HDANodeCommandVerb {
         let mut val = 0u32;
         val.set_bits(0..8, eapd.into());
         val.set_bits(8..20, Self::SET_EAPD_ENABLE);
+        Self(val)
+    }
+
+    fn get_conn_sel_ctrl() -> Self {
+        let mut val = 0u32;
+        val.set_bits(8..20, Self::GET_CONN_SEL_CTRL);
+        Self(val)
+    }
+
+    fn set_conn_sel_ctrl(idx: u8) -> Self {
+        let mut val = 0u32;
+        val.set_bits(0..8, idx.into());
+        val.set_bits(8..20, Self::SET_CONN_SEL_CTRL);
         Self(val)
     }
 }
@@ -2832,6 +3169,16 @@ impl HDANodeCommand {
 
     fn set_eapd_enable(node_addr: NodeAddr, val: u8) -> Self {
         let verb = HDANodeCommandVerb::set_eapd_enable(val);
+        Self::command(node_addr.codec_addr(), node_addr.node_id(), verb)
+    }
+
+    fn get_conn_sel_ctrl(node_addr: NodeAddr) -> Self {
+        let verb = HDANodeCommandVerb::get_conn_sel_ctrl();
+        Self::command(node_addr.codec_addr(), node_addr.node_id(), verb)
+    }
+
+    fn set_conn_sel_ctrl(node_addr: NodeAddr, idx: u8) -> Self {
+        let verb = HDANodeCommandVerb::set_conn_sel_ctrl(idx);
         Self::command(node_addr.codec_addr(), node_addr.node_id(), verb)
     }
 
@@ -3090,6 +3437,10 @@ impl HDANodeResponse {
 
     fn eapd_enable_resp(&self) -> Result<EAPDEnable, ()> {
         Ok(EAPDEnable(self.response.as_u8()))
+    }
+
+    fn get_conn_sel_ctrl_resp(&self) -> Result<GetConnSelCtrlResp, ()> {
+        Ok(GetConnSelCtrlResp(self.response))
     }
 }
 
@@ -3359,6 +3710,16 @@ impl AFGCapResp {
     }
 }
 
+#[derive(Debug)]
+#[repr(transparent)]
+struct GetConnSelCtrlResp(u32);
+
+impl GetConnSelCtrlResp {
+    fn active_idx(&self) -> u8 {
+        self.0.get_bits(0..8).as_u8()
+    }
+}
+
 #[repr(transparent)]
 struct DigitalConverterControl(u32);
 
@@ -3589,7 +3950,36 @@ impl CORB {
         while self.regs.corbwp.write_pointer() != self.regs.corbrp.read_pointer() {}
         self.write_pointer = (self.write_pointer + 1) % self.size.entries_as_u16().as_usize();
         self.commands[self.write_pointer] = command;
+        /*
+        if self.write_pointer == 0 {
+            self.write_pointer = 1;
+            self.commands[self.write_pointer] = command;
+            self.regs.corbwp.set_write_pointer(self.write_pointer.as_u8());
+            
+            self.regs.control.enable_corb_dma_engine(false);
+            while self.regs.control.corb_dma_engine_enabled() {}
+            self.regs.corbrp.set_read_pointer_reset(true);
+            while self.regs.corbrp.read_pointer_reset() != true {}
+            self.regs.corbrp.set_read_pointer_reset(false);
+            while self.regs.corbrp.read_pointer_reset() != false {}
+            self.regs.control.enable_corb_dma_engine(true);
+            while !self.regs.control.corb_dma_engine_enabled() {}
+        }*/
         self.regs.corbwp.set_write_pointer(self.write_pointer.as_u8());
+        /*if self.regs.corbwp.write_pointer().as_u16() == 0 {
+            self.write_pointer = 1;
+            self.commands[self.write_pointer] = command;
+            self.regs.corbwp.set_write_pointer(self.write_pointer.as_u8());
+
+            //self.regs.control.enable_corb_dma_engine(false);
+            //while self.regs.control.corb_dma_engine_enabled() {}
+            self.regs.corbrp.set_read_pointer_reset(true);
+            while self.regs.corbrp.read_pointer_reset() != true {}
+            self.regs.corbrp.set_read_pointer_reset(false);
+            while self.regs.corbrp.read_pointer_reset() != false {}
+            //self.regs.control.enable_corb_dma_engine(true);
+            //while !self.regs.control.corb_dma_engine_enabled() {}
+        }*/
     }
     
     fn size(&self) -> HDARingBufferSize {
@@ -3666,9 +4056,10 @@ impl RIRB {
         // The buffer is circular, so when the last entry is reached
         // the read pointer should wrap around
         self.read_pointer = (self.read_pointer + 1) % self.size.entries_as_u16().as_usize();
-        if self.read_pointer == 0 {
+        if self.read_pointer == self.size().entries_as_u16().as_usize() - 1 {
             self.regs.rirbwp.reset_write_pointer();
         }
+
         self.responses[self.read_pointer]
     }
 
