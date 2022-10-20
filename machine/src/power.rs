@@ -1,3 +1,5 @@
+use core::slice;
+use core::mem;
 use crate::port::{Port, PortReadWrite};
 use crate::memory::Addr;
 use crate::acpi::{detect_rsdp, SDTTable, RSDP};

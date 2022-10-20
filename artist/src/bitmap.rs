@@ -1,7 +1,8 @@
-use core::slice;
+use core::{mem, slice};
+use num::{Integer, Float};
 use collections::vec::Vec;
 use collections::vec;
-use crate::{Color, Hue, X_SCALE, Y_SCALE};
+use crate::{Color, Hue, X_SCALE, Y_SCALE, SCREEN_HEIGHT};
 
 /// The number of colors in the default VGA palette.
 /// All bitmaps used are assumed to have this number of colors in their color tables
@@ -193,10 +194,10 @@ impl Bitmap {
         );
         for y in 0..self.height() {
             let i = y + 1;
-            for _yp in y * Y_SCALE..i * Y_SCALE {
+            for yp in y * Y_SCALE..i * Y_SCALE {
                 for x in 0..self.width() {
                     let j = x + 1;
-                    for _xp in x * X_SCALE..j * X_SCALE {
+                    for xp in x * X_SCALE..j * X_SCALE {
                         let pixel_array_y = self.height() - y - 1;
                         let raw_color = self.image_data[pixel_array_y*self.width()+x];
                         scaled_image.push(Color::from_bitmap_data(raw_color));

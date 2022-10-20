@@ -216,7 +216,7 @@ pub struct EFISimpleTextInputProtocol {
 
 impl EFISimpleTextInputProtocol {
     pub fn read_key(&self) -> Result<Option<EFIInputKey>, &'static str> {
-        let key: *mut EFIInputKey = ptr::null_mut();
+        let mut key: *mut EFIInputKey = ptr::null_mut();
         let status = unsafe { (self.read_key_stroke)(
             self,
             key
@@ -436,7 +436,7 @@ impl EFIBootServices {
     }
 
     pub fn signal_event(&self, event: EFIEvent) -> Result<(), &'static str> {
-        let status = (self.signal_event)(event);
+        let status = unsafe { (self.signal_event)(event) };
         if StatusCode::is_error(status) {
             Err("Failed to signal timer event")
         } else {
@@ -513,10 +513,11 @@ impl EFIBootServices {
         if alloc_status != StatusCode::STATUS_SUCCESS {
             return Err("Unable to allocate memory for the memory map");
         }
-        let mem_map_buffer = mem_map_buffer.cast::<EFIMemRegion>();
+        let mut mem_map_buffer = mem_map_buffer.cast::<EFIMemRegion>();
+        let mut m = 0;
         loop {
             // Get the memory map
-            (self.get_mem_map)(
+            let status = (self.get_mem_map)(
                 &mut map_size,
                 mem_map_buffer,
                 &mut map_key,
@@ -534,6 +535,7 @@ impl EFIBootServices {
                     mmap_entry_size: descriptor_size
                 };
                 return Ok(MemMap::from(mmap_descr));
+                //return Ok(());
             } else if boot_exit_status == StatusCode::ERROR_BIT | StatusCode::STATUS_INVALID_PARAMETER {
                 continue;
             } else {

@@ -2,12 +2,14 @@
 #![feature(array_windows)]
 #![allow(unaligned_references, dead_code)]
 
-use core::ops::{Index, DerefMut};
+use core::ops::{Index, IndexMut, Deref, DerefMut};
 use machine::port::{Port, PortReadWrite};
 use machine::interrupts::IRQ;
+use machine::memory::Addr;
 use num::{Integer, BitState};
 use collections::vec;
 use collections::vec::Vec;
+use sync::once::Once;
 use event_hook::{EventKind, box_fn, HandlerId, BoxedFn};
 
 mod wav;
@@ -15,6 +17,7 @@ pub mod macros;
 pub use wav::WavFile;
 mod printer;
 mod font;
+use printer::Printer;
 
 static mut SOUND_DEVICE: Option<SoundDevice> = None;
 
@@ -22,12 +25,12 @@ unsafe impl Sync for SoundDevice {}
 
 pub fn init() -> Result<(), &'static str> {
     if unsafe { SOUND_DEVICE.is_none() } {
-        let sound_device = find_sound_device().ok_or("Couldn't find the sound device")?;
+        let mut sound_device = find_sound_device().ok_or("Couldn't find the sound device")?;
         // The SOUND_DEVICE static must be initialized before starting
         // to prevent registers in the sound controller from getting
         // temporary stack addresses written to them
         unsafe { SOUND_DEVICE = Some(sound_device) };
-        let sound_device = unsafe { SOUND_DEVICE.as_mut().unwrap() };
+        let mut sound_device = unsafe { SOUND_DEVICE.as_mut().unwrap() };
         sound_device.start()?;
     }
     Ok(())
@@ -43,6 +46,17 @@ pub fn stop_sound() -> Result<(), ()> {
     sd.stop_sound()
 }
 
+/*
+pub fn pause_sound(stream_tag: StreamTag) {
+    let sd = get_sound_device().unwrap();
+    sd.pause_sound(stream_tag);
+}
+
+pub fn resume_sound(stream_tag: StreamTag) {
+    let sd = get_sound_device().unwrap();
+    sd.resume_sound(stream_tag);
+}
+*/
 fn get_sound_device() -> Option<&'static mut SoundDevice> {
     unsafe { SOUND_DEVICE.as_mut() }
 }
@@ -156,8 +170,8 @@ impl OutputStream {
         assert!(self.bdl.next_index == 0);
         // The HDA spec dictates that there must be at least 2 entries
         // in the BDL
-        self.bdl.add_entry(bdl_entry).unwrap();
-        self.bdl.add_entry(bdl_entry).unwrap();
+        self.bdl.add_entry(bdl_entry);
+        self.bdl.add_entry(bdl_entry);
         self.regs.cyclic_buffer_len.set_cyclic_buffer_len(self.bdl.data_bytes_len());
     }
 
@@ -503,6 +517,14 @@ impl Pin {
     }
 
     fn unmute(&mut self, commander: &mut Commander) {
+        let get_amp_cap_command = HDANodeCommand::get_out_amp_capabilties(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        let amp_cap = commander.command(get_amp_cap_command)
+            .amp_capabilities_resp();
+        if amp_cap.is_err() { return; }
+        let amp_cap = amp_cap.unwrap();
         // Unmute DAC amplifier
         let amp_gain = AmpGain::new()
             .mute(false)
@@ -518,6 +540,17 @@ impl Pin {
         );
         commander.command(set_amp_gain_command);
     }
+
+    /*fn config_defaults(&self, commander: &mut Commander) -> HDANodeResponsePinConfigDefaults {
+        let pin_config_default_command = HDANodeCommand::get_pin_config_defaults(
+            self.addr.codec_addr(),
+            self.addr.node_id()
+        );
+        let config_defaults = commander.command(pin_config_default_command)
+            .get_pin_config_defaults_resp()
+            .unwrap();
+        config_defaults
+    }*/
 }
 
 impl NodeWithConnList for Pin {
@@ -941,7 +974,7 @@ impl SoundDevice {
         if self.currently_playing_sound_id.is_some() {
             self.stop_sound().unwrap();
         }
-        let output_stream = &mut self.output_stream;
+        let mut output_stream = &mut self.output_stream;
         // For some reason, this init function has to be called
         // again before playing a new stream
         output_stream.init();
@@ -951,7 +984,7 @@ impl SoundDevice {
                 stop_sound().unwrap();
             })),
             ActionOnEnd::Replay => event_hook::hook_event(EventKind::Sound, box_fn!(move |_| {
-                let sd = get_sound_device().unwrap();
+                let mut sd = get_sound_device().unwrap();
                 sd.output_stream.stop();
                 sd.output_stream.reset();
                 sd.output_stream.init();
@@ -1031,7 +1064,7 @@ impl SoundDevice {
     }
 
     fn start(&mut self) -> Result<(), &'static str> {
-        let controller_regs = self.controller_regs_mut();
+        let mut controller_regs = self.controller_regs_mut();
         // Asserting the bit removes the controller from reset state
         controller_regs.control.set_controller_reset(true);
         while !controller_regs.control.controller_reset() {}
@@ -1052,7 +1085,7 @@ impl SoundDevice {
                 self.codec_addrs.push(i);
             });
         
-        let interrupt_regs = self.interrupt_regs_mut();
+        let mut interrupt_regs = self.interrupt_regs_mut();
 
         // Enable interrupts from the controller
         interrupt_regs.control.set_global_interrupt_enable(true);
@@ -1080,20 +1113,20 @@ impl SoundDevice {
         self.discover_widgets();
         // Output stream must be initialized before preparing to play sound
         self.output_stream.init();
-        self.prepare_to_play_sound()?;
+        self.prepare_to_play_sound(1)?;
         Ok(())
     }
 
-    fn prepare_to_play_sound(&mut self) -> Result<(), &'static str> {
+    fn prepare_to_play_sound(&mut self, stream_tag: StreamTag) -> Result<(), &'static str> {
         if self.output_pins.len() < 1 {
             return Err("No enough output pins to play sound");
         }
         if self.output_converters.len() < 1 {
             return Err("No enough output converters to play sound");
         }
-        let pin = &mut self.output_pins[0];
+        let mut pin = &mut self.output_pins[0];
         let mut dac: Option<DAC> = None;
-        for (_, dac_) in self.output_converters.iter().enumerate() {
+        for (i, dac_) in self.output_converters.iter().enumerate() {
             if pin.conn_list_contains(dac_.addr) {
                 dac = Some(*dac_);
                 break;
@@ -1136,7 +1169,7 @@ impl SoundDevice {
                         }
                         HDAAFGWidgetType::AudioMixer => {
                             let mut mixer = Mixer::new(codec_addr, node.addr().node_id());
-                            build_conn_list(mixer.addr, &mut mixer.conn_list, &mut self.commander).unwrap();
+                            build_conn_list(mixer.addr, &mut mixer.conn_list, &mut self.commander);
                             self.mixers.push(mixer);
                         }
                         HDAAFGWidgetType::PinComplex => {
@@ -1148,7 +1181,7 @@ impl SoundDevice {
                                 && config_defaults.default_device() == DefaultDevice::Speaker) {
                                     continue;
                                 }
-                            build_conn_list(pin.addr, &mut pin.conn_list, &mut self.commander).unwrap();
+                            build_conn_list(pin.addr, &mut pin.conn_list, &mut self.commander);
                             self.output_pins.push(pin);
                         },
                         _ => ()
@@ -1172,7 +1205,7 @@ impl SoundDevice {
     }
 
     fn reg_ptr_base(pci_config: PCIDevice, offset: isize) -> *mut u8 {
-        let base_ptr = pci_config.bar0().addr() as *mut u8;
+        let base_ptr = (pci_config.bar0().addr() as *mut u8);
         unsafe { base_ptr.offset(offset) }
     }
 
@@ -2794,7 +2827,7 @@ impl BufferDescriptorList {
     /// The HDA spec dictates that there must be at least 2
     /// entries in the list
     fn new() -> Self {
-        let list = [BufferDescriptorListEntry::null(); 256];
+        let mut list = [BufferDescriptorListEntry::null(); 256];
         Self {
             entries: list,
             next_index: 0
@@ -2893,16 +2926,16 @@ impl HDANodeCommandVerb {
         Self(val)
     }
 
-    fn set_power_state(state: PowerState) -> Self {
+    fn set_power_state(val: PowerState) -> Self {
         let mut val = 0u32;
-        val.set_bits(0..4, state.into());
+        val.set_bits(0..4, val.into());
         val.set_bits(8..20, Self::SET_POWER_STATE);
         Self(val)
     }
 
-    fn set_amp_gain(gain: AmpGain) -> Self {
+    fn set_amp_gain(val: AmpGain) -> Self {
         let mut val = 0u32;
-        val.set_bits(0..16, gain.into());
+        val.set_bits(0..16, val.into());
         val.set_bits(16..20, Self::SET_AMP_GAIN);
         Self(val)
     }
@@ -3306,12 +3339,6 @@ impl AmpGain {
         let mut val = self.0;
         val.set_bits(8..12, idx.into());
         Self(val)
-    }
-}
-
-impl From<AmpGain> for u32 {
-    fn from(gain: AmpGain) -> u32 {
-        gain.0.into()
     }
 }
 

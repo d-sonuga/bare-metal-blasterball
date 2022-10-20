@@ -2,7 +2,7 @@ use core::ops::{Drop, Deref, DerefMut};
 use core::cmp::PartialEq;
 use core::fmt;
 use core::mem;
-use crate::allocator::Allocator;
+use crate::allocator::{Allocator, get_allocator};
 
 
 pub struct Box<'a, T> {
@@ -15,7 +15,7 @@ impl<'a, T> Box<'a, T> {
     pub fn new(val: T, allocator: &'a dyn Allocator) -> Box<T> {
         match unsafe { allocator.alloc(mem::size_of::<T>(), 1) } {
             Ok(ptr) => {
-                let ptr = ptr as *mut T;
+                let mut ptr = ptr as *mut T;
                 unsafe { *ptr = val };
                 Box {
                     ptr,

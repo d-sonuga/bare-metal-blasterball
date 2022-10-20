@@ -2,16 +2,18 @@
 
 #![cfg_attr(not(test), no_std)]
 #![feature(unboxed_closures, fn_traits)]
-#![allow(dead_code)]
 
-use core::ops::{Index, IndexMut};
+use core::ops::{Index, IndexMut, Deref, DerefMut};
 use core::clone::Clone;
+use core::marker::PhantomData;
 use machine::keyboard::{KeyCode, KeyDirection, KeyModifiers};
+use machine::instructions::interrupts::without_interrupts;
 use collections::vec::Vec;
 use collections::queue::Queue;
-use collections::queue;
+use collections::{vec, queue};
 use collections::allocator::{get_allocator, Allocator};
-use sync::mutex::Mutex;
+use lazy_static::lazy_static;
+use sync::mutex::{Mutex, MutexGuard};
 
 pub mod boxed_fn;
 pub use boxed_fn::BoxedFn;
@@ -378,7 +380,7 @@ impl<'a> EventHooker<'a> {
 
     fn unhook(handlers: &mut Handlers<'a>, args: UnhookArgs) {
         for i in 0..handlers[args.event_kind].len() {
-            let handler = &mut handlers[args.event_kind][i];
+            let mut handler = &mut handlers[args.event_kind][i];
             if handler.idx == args.handler_id {
                 handlers[args.event_kind].remove(i);
                 break;

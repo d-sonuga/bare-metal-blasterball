@@ -1,5 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::fmt; use machine::power::FRAMEBUFFER;
+use::core::fmt::Write;
 const FONT_WIDTH: usize = 8;
 const FONT_HEIGHT: usize = 8;
 const X_SCALE: usize = 2;
@@ -40,7 +41,7 @@ impl Printer {
     pub fn print_char(&mut self, c: u8) {
         let framebuffer = FRAMEBUFFER.get().unwrap().as_mut_ptr();
         //let framebuffer = 0xa0000;
-        let vga = framebuffer as *mut Color;
+        let mut vga = framebuffer as *mut Color;
         let curr_x = X_POS.load(Ordering::Relaxed);
         let curr_y = Y_POS.load(Ordering::Relaxed);
         if c == b'\n' {

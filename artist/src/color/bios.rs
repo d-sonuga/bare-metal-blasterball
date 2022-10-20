@@ -7,23 +7,23 @@ use crate::Hue;
 pub struct Color(u8);
 
 impl Color {
-    pub const BLACK: u8       = 0x0;
-    pub const BLUE: u8        = 0x1;
-    pub const GREEN: u8       = 0x2;
-    pub const CYAN: u8        = 0x3;
-    pub const RED: u8         = 0x4;
-    pub const MAGENTA: u8     = 0x5;
-    pub const BROWN: u8       = 0x6;
-    pub const LIGHT_GRAY: u8   = 0x7;
-    pub const DARK_GRAY: u8    = 0x8;
-    pub const LIGHT_BLUE: u8   = 0x9;
-    pub const LIGHT_GREEN: u8  = 0xa;
-    pub const LIGHT_CYAN: u8   = 0xb;
-    pub const LIGHT_RED: u8    = 0xc;
-    pub const PINK: u8        = 0xd;
-    pub const YELLOW: u8      = 0xe;
-    pub const WHITE: u8       = 0xf;
-    pub const PURPLE: u8      = 0x6b;
+    pub const Black: u8       = 0x0;
+    pub const Blue: u8        = 0x1;
+    pub const Green: u8       = 0x2;
+    pub const Cyan: u8        = 0x3;
+    pub const Red: u8         = 0x4;
+    pub const Magenta: u8     = 0x5;
+    pub const Brown: u8       = 0x6;
+    pub const LightGray: u8   = 0x7;
+    pub const DarkGray: u8    = 0x8;
+    pub const LightBlue: u8   = 0x9;
+    pub const LightGreen: u8  = 0xa;
+    pub const LightCyan: u8   = 0xb;
+    pub const LightRed: u8    = 0xc;
+    pub const Pink: u8        = 0xd;
+    pub const Yellow: u8      = 0xe;
+    pub const White: u8       = 0xf;
+    pub const Purple: u8      = 0x6b;
 
     /// Creates a new instance of the color
     pub fn new(color: u8) -> Self {

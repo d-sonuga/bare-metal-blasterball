@@ -1,10 +1,22 @@
-use machine::power::FRAMEBUFFER;
-use machine::memory::{Addr, EFIMemRegionType, MemChunk};
+use core::ffi::c_void;use machine::power::FRAMEBUFFER;
+use core::{ptr, mem};
+use core::ops::BitOr;
+use machine::keyboard::uefi::{EFIInputKey, EFIKeyData, EFIKeyToggle};
+use machine::memory::{Addr, EFIMemMapDescriptor, EFIMemRegion, MemMap, MemAllocator, EFIMemRegionType, MemChunk, MemRegionType};
 use machine::uefi;
-use machine::uefi::EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+use machine::uefi::{EFIEventType, EFITpl, EFIEvent, EFITimerType, EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID};
+use event_hook;
+use event_hook::{Event};
+use machine::keyboard::uefi::EFIScanCode;
+use machine::keyboard::{KeyDirection, KeyCode, KeyModifiers, KeyEvent};
+use num::Integer;
+use sync::mutex::Mutex;
+use sync::once::Once;
 use crate::{APP_STACK_SIZE, APP_HEAP_SIZE};
 use crate::{setup_memory_and_run_game};
 
+
+//static FRAMEBUFFER: Once<Addr> = Once::new();
 
 machine::efi_entry_point!(main);
 
@@ -17,10 +29,13 @@ fn main(image_handle: machine::uefi::EFIHandle) -> ! {
     let framebuffer = init_graphics().unwrap();
     init_framebuffer(framebuffer);
 
-    let (stack_mem, heap_mem) = alloc_game_mem().unwrap();
     let boot_services = systable.boot_services();
-    boot_services.exit_boot_services(image_handle).unwrap();
+
+    let stack_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_STACK_SIZE as usize).unwrap();
+    let heap_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_HEAP_SIZE as usize).unwrap();
+    let mut mmap = boot_services.exit_boot_services(image_handle).unwrap();
     setup_memory_and_run_game(stack_mem, heap_mem);
+    loop {}
 }
 
 /// Initializes the graphics mode to a 640x480 mode
@@ -52,14 +67,15 @@ fn init_graphics() -> Result<Addr, &'static str> {
 }
 
 fn alloc_game_mem() -> Result<(MemChunk, MemChunk), &'static str> {
+    use crate::{APP_STACK_SIZE, APP_HEAP_SIZE};
     let systable = uefi::get_systable();
     if systable.is_none() {
         return Err("System table is not intialized");
     }
     let systable = systable.unwrap();
     let boot_services = systable.boot_services();
-    let stack_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_STACK_SIZE as usize)?;
-    let heap_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_HEAP_SIZE as usize)?;
+    let mut stack_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_STACK_SIZE as usize)?;
+    let mut heap_mem = boot_services.alloc_mem(EFIMemRegionType::LoaderData, APP_HEAP_SIZE as usize)?;
     Ok((stack_mem, heap_mem))
 }
 
@@ -72,7 +88,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     if FRAMEBUFFER.get().is_some() {
         // The printer can't be used until the
         // FRAMEBUFFER has been initialized
-        writeln!(Printer, "{}", info).unwrap();
+        writeln!(Printer, "{}", info);
     }
     loop {}
 }
@@ -81,7 +97,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::fmt;
 use::core::fmt::Write;
-use artist::{FONT_WIDTH, FONT_HEIGHT, X_SCALE, Y_SCALE, SCREEN_WIDTH, Color};
+use artist::{FONT_WIDTH, FONT_HEIGHT, X_SCALE, Y_SCALE, SCREEN_WIDTH, SCREEN_HEIGHT, Color};
 static X_POS: AtomicUsize = AtomicUsize::new(0);
 static Y_POS: AtomicUsize = AtomicUsize::new(0);
 use artist::font;
@@ -105,7 +121,7 @@ impl Printer {
         if framebuffer.is_none() {
             return;
         }
-        let vga = framebuffer.unwrap().as_mut_ptr() as *mut Color;
+        let mut vga = framebuffer.unwrap().as_mut_ptr() as *mut Color;
         let curr_x = X_POS.load(Ordering::Relaxed);
         let curr_y = Y_POS.load(Ordering::Relaxed);
         if c == b'\n' {
@@ -121,9 +137,9 @@ impl Printer {
                         for xp in x * X_SCALE..j * X_SCALE {
                             unsafe {
                                 if byte & (1 << (FONT_WIDTH - x - 1)) == 0 {
-                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = Color::new(Color::BLUE);
+                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = Color::new(Color::Blue);
                                 } else {
-                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = Color::new(Color::BLACK);
+                                    *vga.offset(((curr_y + yp)*SCREEN_WIDTH+xp+curr_x) as isize) = Color::new(Color::Black);
                                 }
                             }
                         }

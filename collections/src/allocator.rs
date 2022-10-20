@@ -1,3 +1,5 @@
+//! Everything related to heap allocation
+use core::cell::RefCell;
 use core::mem;
 use sync::mutex::Mutex;
 use machine::memory::{MemChunk, Addr};
@@ -118,7 +120,7 @@ impl LinkedListAllocator {
                 // The mem chunk comes after the node and there is no other node after
                 // ----NNNN--------------
                 // ----------MMM---------
-                let new_node_ptr = mem_chunk.start_addr().as_u64() as *mut ListNode;
+                let mut new_node_ptr = mem_chunk.start_addr().as_u64() as *mut ListNode;
                 *new_node_ptr = ListNode { size: mem_chunk.size(), next: (*curr_node_ptr).next.take() };
                 (*curr_node_ptr).next = Some(new_node_ptr);
                 return;

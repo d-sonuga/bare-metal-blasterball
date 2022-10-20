@@ -1,10 +1,11 @@
+use core::fmt::Write;
 use machine::interrupts::{InterruptDescriptorTable, InterruptStackFrame, IRQ};
 use machine::pic8259::{Pics, PIC_1_OFFSET};
 use machine::instructions::interrupts::{enable as enable_interrupts, disable as disable_interrupts};
 use machine::keyboard::Keyboard;
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
-use event_hook::Event;
+use event_hook::{EventHooker, Event};
 use event_hook;
 use crate::gdt::DOUBLE_FAULT_IST_INDEX;
 
@@ -30,45 +31,50 @@ lazy_static! {
 }
 
 pub fn init(){
+    use core::fmt::Write;
     disable_interrupts();
     IDT.load();
     PICS.lock().init();
     enable_interrupts();
 }
 
-extern "x86-interrupt" fn brkpoint_interrupt_handler(_sf: InterruptStackFrame) {
+extern "x86-interrupt" fn brkpoint_interrupt_handler(sf: InterruptStackFrame) {
     panic!("In the breakpoint");
+    loop {}
 }
 
 extern "x86-interrupt" fn page_fault_handler(sf: InterruptStackFrame, err_code: u64) {
     panic!("Page Fault\nErr Code: {}\n{:?}", err_code, sf);
+    loop {}
 }
 
 extern "x86-interrupt" fn double_fault_handler(sf: InterruptStackFrame, err_code: u64) -> ! {
     panic!("Double Fault\nErr Code: {}\n{:?}", err_code, sf);
+    loop {}
 }
 
-extern "x86-interrupt" fn timer_interrupt_handler(_sf: InterruptStackFrame) {
+extern "x86-interrupt" fn timer_interrupt_handler(sf: InterruptStackFrame) {
     event_hook::send_event(Event::Timer);
-    PICS.lock().end_of_interrupt(IRQ::Timer.as_u8() + PIC_1_OFFSET)
+    unsafe { PICS.lock().end_of_interrupt(IRQ::Timer.as_u8() + PIC_1_OFFSET) }
 }
 
-extern "x86-interrupt" fn keyboard_interrupt_handler(_sf: InterruptStackFrame) {
+extern "x86-interrupt" fn keyboard_interrupt_handler(sf: InterruptStackFrame) {
     use machine::port::{Port, PortReadWrite};
     let port: Port<u8> = Port::new(0x60);
-    let scancode: u8 = port.read();
+    let scancode: u8 = unsafe { port.read() };
     let mut keyboard = KEYBOARD.lock();
     if let Ok(Some(event)) = keyboard.process_byte(scancode) {
         event_hook::send_event(Event::Keyboard(event.keycode, event.direction, event.key_modifiers));
     }
-    PICS.lock().end_of_interrupt(IRQ::Keyboard.as_u8() + PIC_1_OFFSET)
+    unsafe { PICS.lock().end_of_interrupt(IRQ::Keyboard.as_u8() + PIC_1_OFFSET) }
 }
 
-extern "x86-interrupt" fn sound_interrupt_handler(_sf: InterruptStackFrame) {
+extern "x86-interrupt" fn sound_interrupt_handler(sf: InterruptStackFrame) {
     event_hook::send_event(Event::Sound);
-    PICS.lock().end_of_interrupt(IRQ::Sound.as_u8() + PIC_1_OFFSET)
+    unsafe { PICS.lock().end_of_interrupt(IRQ::Sound.as_u8() + PIC_1_OFFSET) }
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(sf: InterruptStackFrame, err_code: u64) {
     panic!("General Protection Fault\nErr Code: {}\n{:?}", err_code, sf);
+    loop {}
 }

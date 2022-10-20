@@ -5,6 +5,7 @@
 
 use core::ops::{Fn, FnMut, FnOnce};
 use core::ptr::NonNull;
+use core::marker::PhantomData;
 use core::fmt;
 use collections::allocator::Allocator;
 use collections::boxed::Box;

@@ -1,5 +1,10 @@
-use core::ops::Drop;
+//! A contiguous growable array with heap-allocated contents
+
+use core::ops::{Drop, Index, IndexMut};
+use core::cmp::PartialEq;
+use core::iter::Iterator;
 use core::mem;
+use core::fmt;
 use crate::allocator::Allocator;
 
 /// A first in first out structure
