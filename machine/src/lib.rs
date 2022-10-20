@@ -2,6 +2,7 @@
 
 #![cfg_attr(not(test), no_std)]
 #![feature(abi_x86_interrupt, array_windows, abi_efiapi)]
+#![allow(dead_code)]
 
 pub mod interrupts;
 pub mod memory;
@@ -16,7 +17,6 @@ pub mod cmos;
 pub mod uefi;
 pub mod keyboard;
 pub mod acpi;
-pub mod apic;
 mod printer;
 mod font;
 

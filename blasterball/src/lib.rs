@@ -3,25 +3,22 @@
 #![feature(array_windows, array_chunks)]
 #![allow(unaligned_references)]
 
-use core::panic::PanicInfo;
 use core::fmt::Write;
-use machine::memory::MemMap;
-use machine::keyboard::{KeyCode, KeyDirection, KeyModifiers};
+use core::ops::Deref;
+use machine::keyboard::{KeyCode, KeyDirection};
 use sound::{WavFile, Sound, Sample, ActionOnEnd};
 use machine::cmos;
 use machine;
 use event_hook;
 use event_hook::{EventKind, Event, box_fn};
-use physics::{Rectangle, Point, Object, Velocity};
+use physics::{Point, Object, Velocity};
 use num::{Integer, Float};
 use sync::mutex::MutexGuard;
 use collections::vec::Vec;
 use collections::vec;
-use artist::{println, print, SCREEN_HEIGHT, SCREEN_WIDTH, Artist, Color, X_SCALE, Y_SCALE};
+use artist::{println, SCREEN_HEIGHT, SCREEN_WIDTH, Artist, Color, X_SCALE, Y_SCALE};
 use artist::bitmap::{Bitmap, ScaledBitmap, Transparency};
 use artist;
-use collections::allocator::get_allocator;
-use lazy_static::{lazy_static, Deref};
 
 
 sound::sound!(MUSIC, RAW_MUSIC => "./assets/canon-in-d-major.wav", size => 7287938);
@@ -41,14 +38,16 @@ pub fn game_entry_point() -> ! {
         sound::play_sound(MUSIC.deref(), ActionOnEnd::Replay);
         let mut restart = false;
         let restart_exit_hook = event_hook::hook_event(EventKind::Keyboard, box_fn!(|event| {
-            if let Event::Keyboard(keycode, direction, modifiers) = event {
+            if let Event::Keyboard(keycode, direction, _modifiers) = event {
                 match keycode {
                     KeyCode::Y => {
-                        restart = true;
+                        if direction == KeyDirection::Down {
+                            restart = true;
+                        }
                     }
                     KeyCode::Escape => {
-                        if unsafe { machine::power::shutdown() }.is_err() {
-                            println!("Shutdown your computer yourself");
+                        if direction == KeyDirection::Down {
+                            println!("You may now shutdown your computer");
                         }
                     }
                     _ => ()
@@ -107,7 +106,7 @@ impl Game {
             paused: false,
             shutdown_attempted: false,
             paused_msg_has_been_drawn: false,
-            background: Color::new(Color::Purple),
+            background: Color::new(Color::PURPLE),
             blocks: Self::generate_blocks(),
             artist: artist::get_artist().lock()
         }
@@ -115,7 +114,7 @@ impl Game {
 
     fn main_loop(&mut self) {
         let game_hook = event_hook::hook_event(EventKind::Keyboard, box_fn!(|event| {
-            if let Event::Keyboard(keycode, direction, modifiers) = event {
+            if let Event::Keyboard(keycode, direction, _modifiers) = event {
                 if direction == KeyDirection::Down {
                     match keycode {
                         KeyCode::ArrowRight => {
@@ -167,21 +166,21 @@ impl Game {
         self.artist.reset_writing_pos();
         loop {
             if !self.has_started && !self.paused {
-                self.artist.write_str("Press enter to start\n");
+                self.artist.write_str("Press enter to start\n").unwrap();
                 self.artist.reset_writing_pos();
                 continue;
             }
             if self.paused {
                 if self.shutdown_attempted {
-                    self.artist.write_str("Shut down your computer yourself");
+                    self.artist.write_str("Shut down your computer yourself").unwrap();
                     self.artist.reset_writing_pos();
                 } else {
                     if !self.paused_msg_has_been_drawn {
                         self.draw_game_in_double_buffer();
                         self.artist.draw_on_screen_from_double_buffer();
-                        self.artist.write_str("Paused\n");
-                        self.artist.write_str("Press enter to continue\n");
-                        self.artist.write_str("Press x to exit\n");
+                        self.artist.write_str("Paused\n").unwrap();
+                        self.artist.write_str("Press enter to continue\n").unwrap();
+                        self.artist.write_str("Press x to exit\n").unwrap();
                         self.artist.reset_writing_pos();
                         self.paused_msg_has_been_drawn = true
                     }
@@ -189,9 +188,9 @@ impl Game {
                 continue;
             }
             if self.blocks.len() == 0 {
-                self.artist.write_str("You win\n");
-                self.artist.write_str("Press y to play again\n");
-                self.artist.write_str("Press esc to exit\n");
+                self.artist.write_str("You win\n").unwrap();
+                self.artist.write_str("Press y to play again\n").unwrap();
+                self.artist.write_str("Press esc to exit\n").unwrap();
                 self.artist.reset_writing_pos();
                 break;
             }
@@ -208,10 +207,9 @@ impl Game {
                 // Need to consider the scenario where the direction is 270/90 degrees
                 self.ball_char.object.velocity.reflect_about_x_axis();
             } else if ball_is_off_screen(&self.ball_char) {
-                use core::fmt::Write;
-                self.artist.write_str("Game over\n");
-                self.artist.write_str("Press y to play again\n");
-                self.artist.write_str("Press esc to exit");
+                self.artist.write_str("Game over\n").unwrap();
+                self.artist.write_str("Press y to play again\n").unwrap();
+                self.artist.write_str("Press esc to exit").unwrap();
                 break;
             }
             for i in 0..self.blocks.len() {
@@ -221,8 +219,6 @@ impl Game {
                     self.ball_char.object.velocity.reflect_about_x_axis();
                     self.blocks.remove(i);
                     break;
-                } else {
-                    //self.artist.draw_scaled_bitmap_in_double_buffer(block_char.object.pos, &block_char.repr);
                 }
             }
             let old_pos = self.ball_char.object.update_pos(1, X_SCALE, Y_SCALE);
@@ -234,7 +230,6 @@ impl Game {
             self.draw_game_in_double_buffer();
             self.artist.draw_on_screen_from_double_buffer();
         }
-        //core::mem::drop(artist);
         event_hook::unhook_event(game_hook, EventKind::Keyboard);
     }
 
@@ -266,13 +261,13 @@ impl Game {
             .expect("Failed to read the bitmap from the given source");
         let block_bmps = [blue_block_bmp, pink_block_bmp, green_block_bmp, cyan_block_bmp, yellow_block_bmp];
         let mut blocks = vec!(item_type => Character, capacity => 10);
-        let BLOCK_START_POS_X: usize = 15;
-        let BLOCK_END_POS_X: usize = (SCREEN_WIDTH - BLOCK_START_POS_X - block_bmps[0].scaled_width());
-        let BLOCK_START_POS_Y: usize = 10;
-        let BLOCK_END_POS_Y: usize = SCREEN_HEIGHT / 4;
+        let block_start_pos_x: usize = 15;
+        let block_end_pos_x: usize = SCREEN_WIDTH - block_start_pos_x - block_bmps[0].scaled_width();
+        let block_start_pos_y: usize = 10;
+        let block_end_pos_y: usize = SCREEN_HEIGHT / 4;
         let mut i = 0;
-        for y in (BLOCK_START_POS_Y..=BLOCK_END_POS_Y).step_by(block_bmps[0].scaled_height()) {
-            for x in (BLOCK_START_POS_X..=BLOCK_END_POS_X).step_by(block_bmps[0].scaled_width()) {
+        for y in (block_start_pos_y..=block_end_pos_y).step_by(block_bmps[0].scaled_height()) {
+            for x in (block_start_pos_x..=block_end_pos_x).step_by(block_bmps[0].scaled_width()) {
                 let block = Character::new(Object {
                     pos: Point(x.as_i16(), y.as_i16()),
                     velocity: Velocity { direction: 0, speed: 0 }
@@ -287,8 +282,6 @@ impl Game {
     /// Returns an angle in degrees that can be used for an initial angle
     /// for the ball movement in the game
     fn generate_direction(&self) -> usize {
-        return 220;
-        /*
         // The current time is random enough for this purpose
         let time = cmos::get_current_time();
         // Adding 180 because the initial direction can't be anything
@@ -304,7 +297,6 @@ impl Game {
         } else {
             direction
         }
-        */
     }
 
     fn draw_game_in_double_buffer(&mut self) {
@@ -332,12 +324,6 @@ fn ball_collided_with_right_wall(ball_char: &Character) -> bool {
 
 fn ball_collided_with_ceiling(ball_char: &Character) -> bool {
     ball_char.object.pos.y() <= 0 + 5
-}
-
-fn ball_collided_with_paddle(ball_char: &Character, paddle_char: &Character) -> bool {
-    ball_char.object.pos.y() >= paddle_char.object.pos.y()
-        && ball_char.object.pos.x() >= paddle_char.object.pos.x()
-        && ball_char.object.pos.x() <= paddle_char.object.pos.x() + paddle_char.repr.width().as_i16()
 }
 
 fn ball_is_off_screen(ball_char: &Character) -> bool {
@@ -373,8 +359,7 @@ fn ball_passed_through_paddle(old_pos: Point, new_pos: Point, direction: usize, 
 struct Character {
     /// The physical definition of the character?
     object: Object,
-    repr: ScaledBitmap,
-    visibility: Visibility
+    repr: ScaledBitmap
 }
 
 impl Character {
@@ -382,8 +367,7 @@ impl Character {
     fn new(object: Object, repr: ScaledBitmap) -> Self {
         Self {
             object,
-            repr,
-            visibility: Visibility::Visible
+            repr
         }
     }
 
@@ -408,11 +392,4 @@ impl Character {
 enum CollidedFrom {
     Top,
     Bottom
-}
-
-/// Tells whether or not a character should be shown on the screen
-#[derive(Clone, PartialEq)]
-enum Visibility {
-    Visible,
-    Invisible
 }

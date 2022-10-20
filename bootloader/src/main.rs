@@ -10,22 +10,17 @@ mod bios;
 #[cfg(not(feature="bios"))]
 mod uefi;
 
-//#[cfg(feature="bios")]
 mod interrupts;
 
-//#[cfg(feature="bios")]
 mod gdt;
 
 mod artist_init;
 
 use core::arch::asm;
-use machine::memory::{Addr, MemRegion, MemRegionType, AddrRange, MemAllocator, MemMap, MemChunk};
-use machine::memory;
-use artist::{println, clear_screen};
+use machine::memory::MemChunk;
 use collections::allocator;
 use sound;
 use blasterball;
-use core::fmt::Write;
 
 
 macro_rules! Mem {
@@ -76,5 +71,4 @@ fn setup_memory_and_run_game(stack_mem: MemChunk, heap_mem: MemChunk) -> ! {
     sound::init().unwrap();
 
     blasterball::game_entry_point();
-    loop {}
 }

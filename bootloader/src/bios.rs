@@ -108,11 +108,8 @@ pub extern "C" fn main() -> ! {
     let heap_mem = mem_allocator.alloc_mem(MemRegionType::Heap, APP_HEAP_SIZE)
         .expect("Couldn't allocate memory for the heap");
     
-    //println!("{:?}", mmap);
 
     setup_memory_and_run_game(stack_mem, heap_mem);
-
-    loop {}
 }
 
 

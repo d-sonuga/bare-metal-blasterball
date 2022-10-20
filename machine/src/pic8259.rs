@@ -2,8 +2,6 @@
 
 use crate::port::{Port, PortReadWrite};
 use crate::port::consts::WAIT_PORT_NO;
-use core::fmt::Write;
-use crate::printer::Printer;
 use num::Integer;
 use core::arch::asm;
 
@@ -83,9 +81,6 @@ impl Pics {
     
     /// Handles the remapping of the PICs to the offsets
     pub fn init(&mut self) {
-        // Saving original interrupt masks
-        let original_masks = self.read_masks();
-        
         let mut wait_port: Port<u8> = Port::new(WAIT_PORT_NO);
         let mut wait = || wait_port.write(0);
 

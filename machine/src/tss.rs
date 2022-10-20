@@ -54,7 +54,5 @@ impl fmt::Debug for TaskStateSegment {
 
 #[inline]
 pub unsafe fn load_tss(sel: SegmentSelector) {
-    unsafe {
-        asm!("ltr {0:x}", in(reg) sel.0, options(nostack, preserves_flags));
-    }
+    asm!("ltr {0:x}", in(reg) sel.0, options(nostack, preserves_flags));
 }

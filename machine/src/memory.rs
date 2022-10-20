@@ -1,6 +1,6 @@
 //! Abstractions for dealing with memory
 
-use core::ops::{Add, Sub, BitAnd, BitOr, Index, IndexMut, AddAssign};
+use core::ops::{Add, Sub, BitAnd, Index, AddAssign};
 use core::{slice, fmt};
 use num::Integer;
 
@@ -451,8 +451,8 @@ impl MemMap {
         let mut mmap_iter = self.entries.iter_mut().peekable();
         while let Some(region) = mmap_iter.next(){
             if let Some(next) = mmap_iter.peek(){
-                if (region.range.end_addr > next.range.start_addr
-                    && region.region_type == MemRegionType::Usable) {
+                if region.range.end_addr > next.range.start_addr
+                    && region.region_type == MemRegionType::Usable {
                         // region's end_addr overlaps with the next region's start_addr
                         // Remove the overlap
                     region.range.end_addr = next.range.start_addr;
@@ -470,6 +470,7 @@ impl Index<usize> for MemMap {
     }
 }
 
+#[derive(Debug)]
 pub enum MemMapError {
     /// This error is returned when an attempt to add
     /// a memory region to a full memory map has been made
@@ -479,13 +480,13 @@ pub enum MemMapError {
 impl fmt::Debug for MemMap {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("MemMap {\n\t");
-        f.write_str("entries: ");
-        f.debug_list().entries(self.entries.iter()).finish();
-        f.write_str("\n\t");
-        f.write_str("next_entry_index: ");
-        f.write_fmt(format_args!("{:?}", self.next_entry_index));
-        f.write_str("\n}");
+        f.write_str("MemMap {\n\t")?;
+        f.write_str("entries: ")?;
+        f.debug_list().entries(self.entries.iter()).finish()?;
+        f.write_str("\n\t")?;
+        f.write_str("next_entry_index: ")?;
+        f.write_fmt(format_args!("{:?}", self.next_entry_index))?;
+        f.write_str("\n}")?;
         Ok(())
     }
 }
@@ -839,7 +840,7 @@ impl<'b> MemAllocator<'b> {
                     if region.range.start_addr == r.range.start_addr {
                         if region.range.end_addr < r.range.end_addr {
                             r.range.start_addr = region.range.end_addr;
-                            self.mmap.add_region(region);
+                            self.mmap.add_region(region).unwrap();
                         } else {
                             *r = region;
                         }
@@ -848,15 +849,15 @@ impl<'b> MemAllocator<'b> {
                             let mut left_r = r.clone();
                             left_r.range.end_addr = region.range.start_addr;
                             r.range.start_addr = region.range.end_addr;
-                            self.mmap.add_region(left_r);
-                            self.mmap.add_region(region);
+                            self.mmap.add_region(left_r).unwrap();
+                            self.mmap.add_region(region).unwrap();
                         } else {
                             r.range.end_addr = region.range.start_addr;
-                            self.mmap.add_region(region);
+                            self.mmap.add_region(region).unwrap();
                         }
                     } else {
                         r.range.start_addr = region.range.end_addr;
-                        self.mmap.add_region(region);
+                        self.mmap.add_region(region).unwrap();
                     }
                     return;
                 }
@@ -916,7 +917,7 @@ impl<'b> MemAllocator<'b> {
             self.mmap.add_region(MemRegion {
                 range,
                 region_type
-            });
+            }).unwrap();
             Some(mem_chunk)
         } else {
             None
@@ -939,7 +940,9 @@ impl From<E820MemMapDescriptor> for MemMap {
         let e820_mmap = unsafe { slice::from_raw_parts(mmap_start_ptr, mmap_entry_count as usize) };
         let mut mmap = MemMap::new();
         for region in e820_mmap {
-            mmap.add_region(MemRegion::from(*region));
+            if let Err(_) = mmap.add_region(MemRegion::from(*region)) {
+                break;
+            }
         }
         mmap.sort();
         mmap.remove_usable_region_overlaps();
@@ -965,7 +968,9 @@ impl From<EFIMemMapDescriptor> for MemMap {
         };
         let mut mmap = MemMap::new();
         for region in efi_mmap_iter {
-            mmap.add_region(MemRegion::from(region.clone()));
+            if let Err(_) = mmap.add_region(MemRegion::from(region.clone())) {
+                break;
+            }
         }
         mmap.sort();
         mmap.remove_usable_region_overlaps();

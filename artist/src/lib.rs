@@ -1,6 +1,7 @@
 //! Abstractions for printing to the screen
 
 #![no_std]
+#![allow(dead_code)]
 
 use core::fmt;
 use core::fmt::Write;
@@ -8,12 +9,7 @@ use core::ops::{Index, IndexMut};
 use lazy_static::lazy_static;
 use sync::mutex::Mutex;
 use sync::once::Once;
-use physics::{Rectangle, Point};
-use collections::vec::Vec;
-use collections::queue::Queue;
-use collections::vec;
-use collections::queue;
-use machine::port::Port;
+use physics::Point;
 use machine::memory::Addr;
 use num::Integer;
 
@@ -23,7 +19,7 @@ pub mod bitmap;
 mod color;
 pub use color::{Color, Hue};
 
-use bitmap::{Bitmap, ScaledBitmap, Transparency};
+use bitmap::{ScaledBitmap, Transparency};
 
 #[cfg(feature = "bios")]
 pub const SCREEN_WIDTH: usize = 320;
@@ -51,14 +47,14 @@ lazy_static! {
     pub static ref ARTIST: Mutex<Artist> = Mutex::new(Artist {
         x_pos: 0,
         y_pos: 0,
-        color_code: ColorCode(Color::new(Color::Yellow), Color::new(Color::Black)),
+        color_code: ColorCode(Color::new(Color::YELLOW), Color::new(Color::BLACK)),
         vga_buffer: {
             let screen_buffer_addr = SCREEN_BUFFER_ADDRESS.get()
                 .expect("The screen buffer is not initialized");
             unsafe { &mut *(screen_buffer_addr.as_mut_ptr() as *mut VGABuffer) }
         },
         double_buffer: VGABuffer {
-            pixels: [[Color::new(Color::Black); SCREEN_WIDTH]; SCREEN_HEIGHT]
+            pixels: [[Color::new(Color::BLACK); SCREEN_WIDTH]; SCREEN_HEIGHT]
         }
     });
 }
@@ -86,13 +82,6 @@ pub fn _print(args: fmt::Arguments) {
 
 pub fn get_artist() -> &'static Mutex<Artist> {
     &ARTIST
-}
-
-pub fn clear_screen() {
-    use machine::instructions::interrupts;
-    interrupts::without_interrupts(||{
-        ARTIST.lock().clear_screen();
-    });
 }
 
 /// A foreground/background color code for printing characters
@@ -146,7 +135,7 @@ impl Artist {
         if c == b'\n' {
             self.newline();
         } else if is_printable_ascii(c) {
-            let mut buffer = match write_target {
+            let buffer = match write_target {
                 WriteTarget::VGABuffer => &mut self.vga_buffer,
                 WriteTarget::DoubleBuffer => &mut self.double_buffer
             };
@@ -213,23 +202,6 @@ impl Artist {
     pub fn newline(&mut self) {
         self.y_pos += FONT_HEIGHT * Y_SCALE;
         self.x_pos = 0;
-    }
-
-    /// Deletes all characters on a row of the VGA buffer
-    fn clear_row(&mut self, row: usize) {
-    }
-
-    /// Clears the screen
-    fn clear_screen(&mut self) {
-        /*
-        for row in 0..SCREEN_HEIGHT {
-            for col in 0..SCREEN_WIDTH {
-                self.vga_buffer.pixels[row][col] = self.color_code.background();
-            }
-        }
-        */
-        self.x_pos = 0;
-        self.y_pos = 0;
     }
 /*
     pub fn draw_rectangle(&mut self, rect: &Rectangle) {
@@ -402,7 +374,7 @@ impl Artist {
                     let pixel_array_y = bitmap.height() - y - 1;
                     let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
                     //let color = Color::from_bitmap_data(raw_color);
-                    if bitmap.transparency == Transparency::Black && color == Color::Black {
+                    if bitmap.transparency == Transparency::Black && color == Color::BLACK {
                         continue;
                     }
                     self.double_buffer[pos.y().as_usize() + y][pos.x().as_usize() + x] = color;
@@ -417,7 +389,7 @@ impl Artist {
                 if pos_is_within_screen_bounds(pos, x, y) {
                     let pixel_array_y = bitmap.height() - y - 1;
                     let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
-                    if bitmap.transparency == Transparency::Black && color == Color::Black {
+                    if bitmap.transparency == Transparency::Black && color == Color::BLACK {
                         continue;
                     }
                     self.double_buffer[pos.y().as_usize() + y][pos.x().as_usize() + x] = *background;

@@ -4,8 +4,6 @@ use core::{fmt, mem};
 use core::arch::asm;
 use num::Integer;
 use crate::{DescriptorTablePointer, tss::TaskStateSegment, Addr};
-use core::fmt::Write;
-use crate::printer::Printer;
 
 /// A self-imposed limit on the number of entries that should be in the GDT
 const GDT_MAX_ENTRY_SIZE: usize = 8;
@@ -162,7 +160,7 @@ pub struct CS;
 impl SegmentRegister for CS {
     unsafe fn set(&self, selector: SegmentSelector) {
         asm!(
-            "push {sel}",
+            "push {sel:r}",
             "lea {tmp}, [1f + rip]",
             "push {tmp}",
             "retfq",
@@ -186,6 +184,6 @@ pub struct SS;
 
 impl SegmentRegister for SS {
     unsafe fn set(&self, selector: SegmentSelector) {
-        asm!("mov ss, {}", in(reg) selector.0);
+        asm!("mov ss, ax", in("ax") selector.0);
     }
 }

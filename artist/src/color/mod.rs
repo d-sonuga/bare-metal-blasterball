@@ -1,15 +1,11 @@
 mod bios;
 mod uefi;
 
-use num::Integer;
-use bios::Color as BIOSColor;
-use uefi::Color as UEFIColor;
-
 #[cfg(feature = "bios")]
-pub type Color = BIOSColor;
+pub use bios::Color;
 
 #[cfg(not(feature = "bios"))]
-pub type Color = UEFIColor;
+pub use uefi::Color;
 
 pub trait Hue {
     /// Converts a byte in the color indexed bitmap pixel array to

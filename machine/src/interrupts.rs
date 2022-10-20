@@ -240,8 +240,6 @@ impl IndexMut<usize> for InterruptDescriptorTable {
     }
 }
 
-use crate::pic8259::PIC_1_OFFSET;
-
 impl Index<IRQ> for InterruptDescriptorTable {
     type Output = IDTEntry<Handler>;
 
