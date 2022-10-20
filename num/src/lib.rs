@@ -9,7 +9,7 @@
 mod tests;
 
 use core::mem;
-use core::ops::{Add, Sub, Rem, Div, Mul, Range, RangeBounds, Bound, Shl};
+use core::ops::{Add, Sub, Rem, Div, Mul, Range, RangeBounds, Bound};
 
 
 /// A trait to provide generic number and bitwise operations
@@ -293,7 +293,7 @@ macro_rules! impl_float {
                     135 => 1.0,
                     136..=150 => 1.0,
                     151..=165 => 1.0,
-                    165..=179 => 1.0,
+                    166..=179 => 1.0,
                     180 => 0.0,
                     181..=194 => -1.0,
                     195..=209 => -1.0,
@@ -335,7 +335,7 @@ macro_rules! impl_float {
                     180 => -1.0,
                     181..=195 => -3.0,
                     196..=210 => -2.0,
-                    210..=224 => -2.0,
+                    211..=224 => -2.0,
                     225 => -1.0,
                     226..=240 => -1.0,
                     241..=255 => -1.0,

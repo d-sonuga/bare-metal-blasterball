@@ -53,7 +53,7 @@ impl TryFrom<EFIInputKey> for KeyEvent {
                 (shift_down, keycode) = map_ascii_punctuation_3(key.unicode_char);
             } else if key.unicode_char >= 97 && key.unicode_char <= 122 {
                 keycode = map_latin_lowercase_alphabet(key.unicode_char);
-            } else if key.unicode_char >= 0 && key.unicode_char <= 31 {
+            } else if key.unicode_char <= 31 {
                 keycode = map_control_char(key.unicode_char)?;
             } else {
                 return Err(());

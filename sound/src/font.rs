@@ -839,7 +839,7 @@ impl Index<u8> for Font {
 ///
 /// The array at index i is the representation of the character with ascii code i - 32
 pub const FONT: Font = Font([
-    /// Space
+    // Space
     EMPTY,
     EXCLAMATION_MARK,
     QUOTATION_MARK,

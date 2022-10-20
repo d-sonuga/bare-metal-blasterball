@@ -123,33 +123,13 @@ impl<T> Once<T> {
                 Err(s) => status = s
             }
         }
-        /*
         let s = match status {
             OnceStatus::Complete => unsafe { self.force_get() },
             OnceStatus::Panicked => panic!("Initializer panicked"),
             OnceStatus::Running => self.poll().unwrap(),
             OnceStatus::Incomplete => unsafe { unreachable_unchecked() }
         };
-        */
-        if status == OnceStatus::Complete {
-            Ok(unsafe { self.force_get() })
-        } else if status == OnceStatus::Panicked {
-            Ok(panic!("Initializer panicked"))
-        } else if status == OnceStatus::Running {
-            Ok(self.poll().unwrap())
-        } else {
-            Ok(unsafe { unreachable_unchecked() })
-        }
-        //Ok(s)
-    }
-
-    fn wait(&self) -> &T {
-        loop {
-            match self.poll() {
-                Some(x) => break x,
-                None => core::hint::spin_loop()
-            }
-        }
+        Ok(s)
     }
 
     fn poll(&self) -> Option<&T> {

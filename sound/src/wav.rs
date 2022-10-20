@@ -1,4 +1,4 @@
-use core::{mem, slice};
+use core::mem;
 
 #[derive(Clone, Copy, Debug)]
 pub struct WavFile {
@@ -73,7 +73,6 @@ impl WavFile {
         let data_ptr = data_ptr.unwrap();
         const RIFF_HEADER_SIZE: isize = mem::size_of::<RIFFChunkHeader>() as isize;
         let data_chunk_header = unsafe { data_ptr.cast::<RIFFChunkHeader>().read() };
-        let sample_data_ptr = unsafe { data_ptr.offset(RIFF_HEADER_SIZE) };
         let sample_data = unsafe { core::slice::from_raw_parts(data_ptr.cast::<u16>(), (data_chunk_header.size / 2) as usize) };
         Ok(Self {
             header,

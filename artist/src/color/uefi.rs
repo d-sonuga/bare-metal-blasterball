@@ -11,23 +11,23 @@ pub struct Color {
 }
 
 impl Color {
-    pub const Black: u32       = Self::vga_index_to_color_u32(0);
-    pub const Blue: u32        = Self::vga_index_to_color_u32(1);
-    pub const Green: u32       = Self::vga_index_to_color_u32(2);
-    pub const Cyan: u32        = Self::vga_index_to_color_u32(3);
-    pub const Red: u32         = Self::vga_index_to_color_u32(4);
-    pub const Magenta: u32     = Self::vga_index_to_color_u32(5);
-    pub const Brown: u32       = Self::vga_index_to_color_u32(6);
-    pub const LightGray: u32   = Self::vga_index_to_color_u32(7);
-    pub const DarkGray: u32    = Self::vga_index_to_color_u32(8);
-    pub const LightBlue: u32   = Self::vga_index_to_color_u32(9);
-    pub const LightGreen: u32  = Self::vga_index_to_color_u32(10);
-    pub const LightCyan: u32   = Self::vga_index_to_color_u32(11);
-    pub const LightRed: u32    = Self::vga_index_to_color_u32(12);
-    pub const Pink: u32        = Self::vga_index_to_color_u32(13);
-    pub const Yellow: u32      = Self::vga_index_to_color_u32(14);
-    pub const White: u32       = Self::vga_index_to_color_u32(15);
-    pub const Purple: u32      = Self::vga_index_to_color_u32(0x6a);
+    pub const BLACK: u32       = Self::vga_index_to_color_u32(0);
+    pub const BLUE: u32        = Self::vga_index_to_color_u32(1);
+    pub const GREEN: u32       = Self::vga_index_to_color_u32(2);
+    pub const CYAN: u32        = Self::vga_index_to_color_u32(3);
+    pub const RED: u32         = Self::vga_index_to_color_u32(4);
+    pub const MAGENTA: u32     = Self::vga_index_to_color_u32(5);
+    pub const BROWN: u32       = Self::vga_index_to_color_u32(6);
+    pub const LIGHT_GRAY: u32   = Self::vga_index_to_color_u32(7);
+    pub const DARK_GRAY: u32    = Self::vga_index_to_color_u32(8);
+    pub const LIGHT_BLUE: u32   = Self::vga_index_to_color_u32(9);
+    pub const LIGHT_GREEN: u32  = Self::vga_index_to_color_u32(10);
+    pub const LIGHT_CYAN: u32   = Self::vga_index_to_color_u32(11);
+    pub const LIGHT_RED: u32    = Self::vga_index_to_color_u32(12);
+    pub const PINK: u32        = Self::vga_index_to_color_u32(13);
+    pub const YELLOW: u32      = Self::vga_index_to_color_u32(14);
+    pub const WHITE: u32       = Self::vga_index_to_color_u32(15);
+    pub const PURPLE: u32      = Self::vga_index_to_color_u32(0x6a);
 
     /// Creates a new instance of the color
     pub fn new(color: u32) -> Self {
@@ -52,7 +52,7 @@ impl Color {
     /// Converts a VGA index in 320x200 VGA mode to a u32
     /// of the form blue, green, red, reserved
     const fn vga_index_to_color_u32(i: usize) -> u32 {
-        let [red, green, blue] = vga_index_to_rgb_array[i];
+        let [red, green, blue] = VGA_INDEX_TO_RGB_ARRAY[i];
         u32::from_be_bytes([blue, green, red, 0])
     }
 }
@@ -64,7 +64,7 @@ impl Hue for Color {
     /// Since the bytes in the bitmap pixel array are 320x200 mode VGA colors, then
     /// they need to be mapped to their 32 bit equivalents
     fn from_bitmap_data(raw_color: u8) -> Self {
-        Self::from_rgb_array(vga_index_to_rgb_array[raw_color as usize])
+        Self::from_rgb_array(VGA_INDEX_TO_RGB_ARRAY[raw_color as usize])
     }
 
     /// Returns a color into its numerical representation
@@ -73,7 +73,7 @@ impl Hue for Color {
     }
 }
 
-const vga_index_to_rgb_array: [[u8; 3]; 256] = [
+const VGA_INDEX_TO_RGB_ARRAY: [[u8; 3]; 256] = [
     [0, 0, 0, ],
     [0, 0, 168, ],
     [0, 168, 0, ],
@@ -596,5 +596,3 @@ impl PartialEq<u32> for Color {
             == *rhs
     }
 }
-
-pub type EFIGraphicsOutputBltPixel = Color;
