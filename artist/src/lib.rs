@@ -203,114 +203,6 @@ impl Artist {
         self.y_pos += FONT_HEIGHT * Y_SCALE;
         self.x_pos = 0;
     }
-/*
-    pub fn draw_rectangle(&mut self, rect: &Rectangle) {
-        // top_left -> top_right
-        // top_right -> bottom_right
-        // bottom_right -> bottom_left
-        // bottom_left -> top_left
-        self.x_pos = rect.top_left.x();
-        self.y_pos = rect.top_left.y();
-        for i in 0..rect.width {
-            self.vga_buffer[self.y_pos][self.x_pos + i] = self.color_code.foreground();
-            self.vga_buffer[self.y_pos + rect.height][self.x_pos + i] = self.color_code.foreground();
-        }
-        for i in 0..rect.height {
-            self.vga_buffer[self.y_pos + i][self.x_pos] = self.color_code.foreground();
-            self.vga_buffer[self.y_pos + i][self.x_pos + rect.width] = self.color_code.foreground();
-        }
-    }
-
-    pub fn erase_rectangle(&mut self, rect: &Rectangle) {
-        // top_left -> top_right
-        // top_right -> bottom_right
-        // bottom_right -> bottom_left
-        // bottom_left -> top_left
-        self.x_pos = rect.top_left.x();
-        self.y_pos = rect.top_left.y();
-        for i in 0..rect.width {
-            self.vga_buffer[self.y_pos][self.x_pos + i] = self.color_code.background();
-            self.vga_buffer[self.y_pos + rect.height][self.x_pos + i] = self.color_code.background();
-        }
-        for i in 0..rect.height {
-            self.vga_buffer[self.y_pos + i][self.x_pos] = self.color_code.background();
-            self.vga_buffer[self.y_pos + i][self.x_pos + rect.width] = self.color_code.background();
-        }
-    }
-*/
-
-    /*pub fn draw_bitmap_in_double_buffer(&mut self, pos: Point, bitmap: &Bitmap) {
-        for y in 0..bitmap.height() {
-            let i = y + 1;
-            for yp in y * Y_SCALE..i * Y_SCALE {
-                for x in 0..bitmap.width() {
-                    let j = x + 1;
-                    for xp in x * X_SCALE..j * X_SCALE {
-                        let pixel_array_y = bitmap.height() - y - 1;
-                        if pos_is_within_screen_bounds(pos, xp, yp) {
-                            let raw_color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
-                            let color = Color::from_bitmap_data(raw_color);
-                            if bitmap.transparency == Transparency::Black && color == Color::Black {
-                                continue;
-                            }
-                            self.double_buffer[pos.y().as_usize() + yp][pos.x().as_usize() + xp] = color;
-                        }
-                    }
-                }
-            }
-        }
-    }*/
-
-    /*fn move_bitmap_in_double_buffer(&mut self, old_pos: Point, new_pos: Point, bitmap: Bitmap, bottom_repr: Bitmap, bottom_repr_pos: Point) {
-        for y in 0..bitmap.height() {
-            for x in 0..bitmap.width() {
-                let pixel_array_y = bitmap.height() - y - 1;
-                let bottom_repr_array_y = bottom_repr.height() - y - 1;
-                if pos_is_within_screen_bounds(old_pos, x, y) {
-                    self.double_buffer[old_pos.y().as_usize() + y][old_pos.x().as_usize() + x] =
-                        Color::new(bottom_repr.image_data[(bottom_repr_array_y)*bottom_repr.width()+x]);
-                }
-            }
-        }
-        for y in 0..bitmap.height() {
-            for x in 0..bitmap.width() {
-                let pixel_array_y = bitmap.height() - y - 1;
-                if pos_is_within_screen_bounds(new_pos, x, y) {
-                    self.double_buffer[new_pos.y().as_usize() + y][new_pos.x().as_usize() + x] = 
-                        Color::new(bitmap.image_data[pixel_array_y*bitmap.width()+x]);
-                }
-            }
-        }
-    }*/
-
-    /*pub fn redraw_region_in_double_buffer(&mut self, top_left_corner: Point, top_right_corner: Point, bottom_left_corner: Point, bottom_right_corner: Point, bitmaps_to_draw: Vec<(Point, Bitmap)>) {
-        for (point, bitmap) in bitmaps_to_draw.iter() {
-            for y in top_left_corner.y().as_usize()..=bottom_left_corner.y().as_usize() {
-                for x in top_left_corner.x().as_usize()..=top_right_corner.x().as_usize() {
-                    if pos_is_within_screen_bounds(Point(x.as_i16(), y.as_i16()), 0, 0) {
-                        // If the current point being drawn falls within the current bitmap's
-                        // range, draw the bitmap, else continue
-                        if x >= point.x().as_usize() && x < point.x().as_usize() + bitmap.width()
-                            && y >= point.y().as_usize() && y < point.y().as_usize() + bitmap.height() {
-                                let (bitmap_x, bitmap_y) = (x - point.x().as_usize(), y - point.y().as_usize());
-                                let pixel_array_y = bitmap.height() - bitmap_y - 1;
-                                let color = bitmap.image_data[pixel_array_y*bitmap.width()+bitmap_x];
-                                if self.transparency == Transparency::Black && color == Color::Black {
-                                    continue;
-                                }
-                                self.double_buffer[y][x] = Color::new(color);
-                        }
-                    }
-                }
-            }
-        }
-    }*/
-
-    /*pub fn service_all_double_buffer_requests(&mut self) {
-        while let Some(request) = self.move_bitmap_in_double_buffer_request_queue.dequeue() {
-            self.move_bitmap_in_double_buffer(request.old_pos, request.new_pos, request.repr, request.bottom_repr, request.bottom_repr_pos);
-        }
-    }*/
     
     pub fn draw_background_in_double_buffer(&mut self, color: &Color) {
         // Rust was too slow for this.
@@ -334,33 +226,6 @@ impl Artist {
             );
         }
     }
-/*
-    pub fn move_bitmap_in_double_buffer(&mut self, bitmap: &Bitmap, old_pos: Point, new_pos: Point, background: &Color) {
-        self.erase_bitmap_from_double_buffer(bitmap, old_pos, background);
-        self.draw_bitmap_in_double_buffer(new_pos, bitmap);
-    }
-
-    pub fn erase_bitmap_from_double_buffer(&mut self, bitmap: &Bitmap, pos: Point, background: &Color) {
-        for y in 0..bitmap.height() {
-            let i = y + 1;
-            for yp in y * Y_SCALE..i * Y_SCALE {
-                for x in 0..bitmap.width() {
-                    let j = x + 1;
-                    for xp in x * X_SCALE..j * X_SCALE {
-                        let pixel_array_y = bitmap.height() - y - 1;
-                        if pos_is_within_screen_bounds(pos, xp, yp) {
-                            let raw_color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
-                            let color = Color::from_bitmap_data(raw_color);
-                            if bitmap.transparency == Transparency::Black && color == Color::Black {
-                                continue;
-                            }
-                            self.vga_buffer[pos.y().as_usize() + yp][pos.x().as_usize() + xp] = *background;
-                        }
-                    }
-                }
-            }
-        }
-    }*/
 
     pub fn move_scaled_bitmap_in_double_buffer(&mut self, bitmap: &ScaledBitmap, old_pos: Point, new_pos: Point, background: &Color) {
         self.erase_scaled_bitmap_from_double_buffer(bitmap, old_pos, background);
@@ -373,7 +238,6 @@ impl Artist {
                 if pos_is_within_screen_bounds(pos, x, y) {
                     let pixel_array_y = bitmap.height() - y - 1;
                     let color = bitmap.image_data[pixel_array_y*bitmap.width()+x];
-                    //let color = Color::from_bitmap_data(raw_color);
                     if bitmap.transparency == Transparency::Black && color == Color::BLACK {
                         continue;
                     }
@@ -400,14 +264,6 @@ impl Artist {
 
     pub fn draw_on_screen_from_double_buffer(&mut self) {
         
-        /*fn draw() {
-            for y in 0..SCREEN_HEIGHT {
-                for x in 0..SCREEN_WIDTH {
-                    self.vga_buffer[y][x] = self.double_buffer[y][x];
-                }
-            }
-        }*/
-        
         unsafe {
             use core::arch::asm;
             asm!("
@@ -419,22 +275,7 @@ impl Artist {
             );
         }
     }
-    /*
-    pub fn request_to_move_bitmap_in_double_buffer(&mut self, request: MoveBitmapInDoubleBufferRequest) {
-        self.move_bitmap_in_double_buffer_request_queue.enqueue(request);
-    }
-    */
 }
-
-/*
-pub fn wait_for_retrace() {
-    const INPUT_STATUS: u16 = 0x03da;
-    const VRETRACE: u8 = 0x08;
-    let input_status_port = Port::new(INPUT_STATUS);
-    while input_status_port.read() & VRETRACE != 0 {}
-    while input_status_port.read() & VRETRACE == 0 {}
-}
-*/
 
 pub fn is_printable_ascii(c: u8) -> bool {
     match c {
@@ -504,48 +345,3 @@ mod tests {
     }
 }
 
-
-/*
-use core::sync::atomic::{AtomicUsize, Ordering};
-
-
-fn print_str(s: &str) {
-    for c in s.bytes() {
-        print_char(c);
-    }
-}
-
-pub fn print_char(c: u8) {
-        let mut vga = 0x80000000 as *mut Color;
-        let width = 640;
-        let height = 480;
-        let curr_x = X_POS.load(Ordering::Relaxed);
-        let curr_y = Y_POS.load(Ordering::Relaxed);
-        if c == b'\n' {
-            
-        } else if is_printable_ascii(c) {
-            for (y, byte) in font::FONT[c].iter().enumerate() {
-                for x in 0..8 {
-                    unsafe {
-                        if byte & (1 << (8 - x - 1)) == 0 {
-                            *vga.offset(((curr_y + y)*width+x+curr_x) as isize) = Color::new(Color::Yellow);
-                        } else {
-                            *vga.offset(((curr_y + y)*width+x) as isize) = Color::new(Color::Black);
-                        }
-                    }
-                }
-            }
-            if curr_x + 8 >= width {
-                X_POS.store(0, Ordering::Relaxed);
-                Y_POS.store(curr_y + 8, Ordering::Relaxed);
-            } else {
-                X_POS.store(curr_x + 8, Ordering::Relaxed);
-            }
-        } else {
-            print_char(b'?');
-        }
-    }
-
-static X_POS: AtomicUsize = AtomicUsize::new(0);
-static Y_POS: AtomicUsize = AtomicUsize::new(0);
-*/

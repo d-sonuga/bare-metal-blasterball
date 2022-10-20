@@ -1,7 +1,6 @@
 use core::cmp::PartialEq;
 use crate::Hue;
 
-/// A color that can be put in a pixel
 #[derive(Copy, Clone, PartialEq, Debug, Eq)]
 #[repr(transparent)]
 pub struct Color(u8);

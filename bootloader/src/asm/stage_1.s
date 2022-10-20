@@ -1,6 +1,5 @@
 .section .boot.stage1, "awx"
 .code16
-.intel_syntax noprefix
 .global boot
 
 boot:

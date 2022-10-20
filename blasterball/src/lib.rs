@@ -29,7 +29,6 @@ pub fn game_entry_point() -> ! {
     sound::play_sound(MUSIC.deref(), ActionOnEnd::Replay);
     
     loop {
-        //let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
         let mut game = Game::init();
         // The artist is locked by the game at this point
         // Do not use any print macro here until the game hase been dropped
@@ -43,11 +42,6 @@ pub fn game_entry_point() -> ! {
                     KeyCode::Y => {
                         if direction == KeyDirection::Down {
                             restart = true;
-                        }
-                    }
-                    KeyCode::Escape => {
-                        if direction == KeyDirection::Down {
-                            println!("You may now shutdown your computer");
                         }
                     }
                     _ => ()
@@ -113,6 +107,7 @@ impl Game {
     }
 
     fn main_loop(&mut self) {
+        let mut ended = false;
         let game_hook = event_hook::hook_event(EventKind::Keyboard, box_fn!(|event| {
             if let Event::Keyboard(keycode, direction, _modifiers) = event {
                 if direction == KeyDirection::Down {
@@ -164,6 +159,74 @@ impl Game {
         self.draw_game_in_double_buffer();
         self.artist.draw_on_screen_from_double_buffer();
         self.artist.reset_writing_pos();
+        
+        let main_loop_hook = event_hook::hook_event(EventKind::Timer, box_fn!(|_| {
+            if !self.has_started && !self.paused {
+                self.artist.write_str("Press enter to start\n").unwrap();
+                self.artist.reset_writing_pos();
+                return;
+            }
+            if self.paused {
+                if self.shutdown_attempted {
+                    self.artist.write_str("Shut down your computer yourself").unwrap();
+                    self.artist.reset_writing_pos();
+                } else {
+                    if !self.paused_msg_has_been_drawn {
+                        self.draw_game_in_double_buffer();
+                        self.artist.draw_on_screen_from_double_buffer();
+                        self.artist.write_str("Paused\n").unwrap();
+                        self.artist.write_str("Press enter to continue\n").unwrap();
+                        self.artist.reset_writing_pos();
+                        self.paused_msg_has_been_drawn = true
+                    }
+                }
+                return;
+            }
+            if self.blocks.len() == 0 {
+                self.artist.write_str("You win\n").unwrap();
+                self.artist.write_str("Press y to play again\n").unwrap();
+                self.artist.reset_writing_pos();
+                ended = true;
+                return;
+            }
+            if ball_collided_with_left_wall(&self.ball_char) {
+                // Need to consider the scenario where the direction is 180/0 degrees
+                self.ball_char.object.velocity.reflect_about_y_axis();
+            } else if ball_collided_with_right_wall(&self.ball_char) {
+                // Need to consider the scenario where the direction is 180/0 degrees
+                self.ball_char.object.velocity.reflect_about_y_axis();
+            } else if ball_collided_with_ceiling(&self.ball_char) {
+                // Need to consider the scenario where the direction is 270/90 degrees
+                self.ball_char.object.velocity.reflect_about_x_axis();
+            } else if self.ball_char.collided_with(&self.paddle_char).0 {
+                // Need to consider the scenario where the direction is 270/90 degrees
+                self.ball_char.object.velocity.reflect_about_x_axis();
+            } else if ball_is_off_screen(&self.ball_char) {
+                self.artist.write_str("Game over\n").unwrap();
+                self.artist.write_str("Press y to play again\n").unwrap();
+                ended = true;
+                return;
+            }
+            for i in 0..self.blocks.len() {
+                let block_char = &self.blocks[i];
+                if self.ball_char.collided_with(block_char).0 {
+                    self.artist.erase_scaled_bitmap_from_double_buffer(&block_char.repr, block_char.object.pos, &self.background);
+                    self.ball_char.object.velocity.reflect_about_x_axis();
+                    self.blocks.remove(i);
+                    break;
+                }
+            }
+            let old_pos = self.ball_char.object.update_pos(1, X_SCALE, Y_SCALE);
+            let (ball_passed_through_paddle, point_at_paddle_level_opt) = ball_passed_through_paddle(old_pos, self.ball_char.object.pos, self.ball_char.object.velocity.direction, &self.paddle_char);
+            if ball_passed_through_paddle {
+                self.ball_char.object.pos = point_at_paddle_level_opt.unwrap();
+            }
+            self.artist.move_scaled_bitmap_in_double_buffer(&self.ball_char.repr, old_pos, self.ball_char.object.pos, &self.background);
+            self.draw_game_in_double_buffer();
+            self.artist.draw_on_screen_from_double_buffer();
+        }));
+
+        /*
         loop {
             if !self.has_started && !self.paused {
                 self.artist.write_str("Press enter to start\n").unwrap();
@@ -180,7 +243,6 @@ impl Game {
                         self.artist.draw_on_screen_from_double_buffer();
                         self.artist.write_str("Paused\n").unwrap();
                         self.artist.write_str("Press enter to continue\n").unwrap();
-                        self.artist.write_str("Press x to exit\n").unwrap();
                         self.artist.reset_writing_pos();
                         self.paused_msg_has_been_drawn = true
                     }
@@ -190,7 +252,6 @@ impl Game {
             if self.blocks.len() == 0 {
                 self.artist.write_str("You win\n").unwrap();
                 self.artist.write_str("Press y to play again\n").unwrap();
-                self.artist.write_str("Press esc to exit\n").unwrap();
                 self.artist.reset_writing_pos();
                 break;
             }
@@ -209,7 +270,6 @@ impl Game {
             } else if ball_is_off_screen(&self.ball_char) {
                 self.artist.write_str("Game over\n").unwrap();
                 self.artist.write_str("Press y to play again\n").unwrap();
-                self.artist.write_str("Press esc to exit").unwrap();
                 break;
             }
             for i in 0..self.blocks.len() {
@@ -229,8 +289,12 @@ impl Game {
             self.artist.move_scaled_bitmap_in_double_buffer(&self.ball_char.repr, old_pos, self.ball_char.object.pos, &self.background);
             self.draw_game_in_double_buffer();
             self.artist.draw_on_screen_from_double_buffer();
+        }*/
+        loop {
+            if ended { break; }
         }
         event_hook::unhook_event(game_hook, EventKind::Keyboard);
+        event_hook::unhook_event(main_loop_hook, EventKind::Timer);
     }
 
     fn move_paddle_in_double_buffer(&mut self, direction: PaddleDirection) {

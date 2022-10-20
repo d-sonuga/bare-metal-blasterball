@@ -17,3 +17,6 @@ members = [
 exclude = [
     "tester"
 ]
+
+[profile.release]
+opt-level = 0

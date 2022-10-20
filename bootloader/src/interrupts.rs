@@ -33,6 +33,7 @@ pub fn init(){
     disable_interrupts();
     IDT.load();
     PICS.lock().init();
+    event_hook::init();
     enable_interrupts();
 }
 

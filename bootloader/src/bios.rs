@@ -5,24 +5,11 @@ global_asm!(include_str!("asm/stage_1.s"));
 global_asm!(include_str!("asm/stage_2.s"));
 global_asm!(include_str!("asm/stage_3.s"));
 
-use crate::gdt;
-use crate::interrupts;
 use crate::setup_memory_and_run_game;
 use crate::{APP_STACK_SIZE, APP_HEAP_SIZE};
 
-use core::sync::atomic::{Ordering};
-use core::slice;
-use machine::memory::{Addr, MemRegion, MemRegionType, AddrRange, MemAllocator, MemMap, E820MemMapDescriptor};
-use machine::memory;
-use artist::{println, clear_screen};
-use collections::allocator;
-use blasterball;
 
-macro_rules! addr_to_mut_ref {
-    ($addr:ident) => {
-        &mut *($addr as *const PageTable as *mut PageTable)
-    }
-}
+use machine::memory::{Addr, MemRegion, MemRegionType, AddrRange, MemAllocator, MemMap, E820MemMapDescriptor};
 
 const VGA_BUFFER_ADDR: Addr = Addr::new(0xa0000);
 
@@ -119,7 +106,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     use artist::{is_printable_ascii, font, Color};
     impl PanicWriter {
         fn print_char(&mut self, c: u8) {
-            let mut vga_buffer = VGA_BUFFER_ADDR.as_mut_ptr();
+            let vga_buffer = VGA_BUFFER_ADDR.as_mut_ptr();
             if c == b'\n' {
                 self.print_char(b' ');
             } else if is_printable_ascii(c) {
@@ -129,9 +116,9 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
                         let char_x = (x + self.x_pos) as isize;
                         unsafe {
                             if byte & (1 << (8 - x - 1)) == 0 {
-                                *vga_buffer.offset(char_y*320+char_x) = Color::Black;
+                                *vga_buffer.offset(char_y*320+char_x) = Color::BLACK;
                             } else {
-                                *vga_buffer.offset(char_y*320+char_x) = Color::Pink;
+                                *vga_buffer.offset(char_y*320+char_x) = Color::PINK;
                             }
                         }
                     }
@@ -157,9 +144,8 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
             Ok(())
         }
     }
-    //println!("Panicked: {}", _info);
     let mut panic_writer = PanicWriter { x_pos: 0, y_pos: 0 };
-    panic_writer.write_str("Panicked: ");
-    panic_writer.write_fmt(format_args!("{}", _info));
+    panic_writer.write_str("Panicked: ").unwrap();
+    panic_writer.write_fmt(format_args!("{}", _info)).unwrap();
     loop {}
 }
