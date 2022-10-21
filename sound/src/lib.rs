@@ -14,6 +14,8 @@ mod wav;
 pub mod macros;
 pub use wav::WavFile;
 mod printer;
+use core::fmt::Write;
+use printer::Printer;
 mod font;
 
 static mut SOUND_DEVICE: Option<SoundDevice> = None;
@@ -163,6 +165,9 @@ impl OutputStream {
 
     fn stop(&mut self) {
         self.regs.control.set_stream_run(false);
+        // The HDA spec doesn't say anything about waiting here
+        // but is seems necessary on my computer
+        while self.regs.control.stream_run() == true {}
     }
 
     fn start(&mut self) {
