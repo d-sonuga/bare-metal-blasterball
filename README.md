@@ -21,7 +21,9 @@ with most linux systems.
 * Install qemu and OVMF (https://wiki.osdev.org/OVMF) for UEFI emulation
 
     `sudo dnf install qemu edk2-ovmf`
+
     or
+    
     `sudo apt install qemu edk2-ovmf`
 
 * Copy the OVMF_CODE.fd and OVMF_VARS.fd from the OVMF root directory (/usr/share/edk2/ovmf on my system)
