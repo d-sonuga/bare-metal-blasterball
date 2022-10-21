@@ -311,23 +311,26 @@ mod tests {
 
     #[test]
     fn test_pos_is_within_screen_bounds() {
+        let screen_width: i16 = SCREEN_WIDTH as i16;
+        let screen_height: i16 = SCREEN_HEIGHT as i16;
+
         let pos = Point(0, 0);
         let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
         assert!(is_within_bounds);
 
-        let pos = Point(320, 200);
+        let pos = Point(screen_width, screen_height);
+        let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
+        assert!(is_within_bounds == false);
+
+        let pos = Point(200, screen_height + 20);
         let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
         assert!(!is_within_bounds);
 
-        let pos = Point(200, 220);
+        let pos = Point(screen_width + 1, screen_height);
         let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
         assert!(!is_within_bounds);
 
-        let pos = Point(321, 200);
-        let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
-        assert!(!is_within_bounds);
-
-        let pos = Point(322, 221);
+        let pos = Point(screen_width + 2, screen_height + 1);
         let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
         assert!(!is_within_bounds);
 
@@ -337,9 +340,9 @@ mod tests {
 
         let pos = Point(100, 201);
         let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
-        assert!(!is_within_bounds);
+        assert!(is_within_bounds);
 
-        let pos = Point(319, 199);
+        let pos = Point(screen_width - 1, screen_height - 1);
         let is_within_bounds = pos_is_within_screen_bounds(pos, 0, 0);
         assert!(is_within_bounds);
     }

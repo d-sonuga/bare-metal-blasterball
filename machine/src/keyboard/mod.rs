@@ -39,6 +39,7 @@ impl Keyboard {
     /// # Example
     ///
     /// ```
+    /// use machine::keyboard::{KeyModifiers, KeyEvent, Keyboard, KeyDirection, KeyCode};
     /// let mut kbd = Keyboard::new();
     ///
     /// // Beginning of an extended code
@@ -48,7 +49,7 @@ impl Keyboard {
     /// // End of an extended code
     /// let event = kbd.process_byte(0x10);
     /// assert_eq!(event, Ok(Some(KeyEvent {
-    ///        keycode: KeyCode::PrevTrack
+    ///        keycode: KeyCode::PrevTrack,
     ///        key_modifiers: KeyModifiers::new(),
     ///        direction: KeyDirection::Down
     /// })));

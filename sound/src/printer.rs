@@ -1,5 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::fmt; use machine::power::FRAMEBUFFER;
+use core::fmt;
+use machine::FRAMEBUFFER;
 const FONT_WIDTH: usize = 8;
 const FONT_HEIGHT: usize = 8;
 const X_SCALE: usize = 2;
@@ -34,7 +35,7 @@ impl fmt::Write for Printer {
         Ok(())
     }
 }
-use machine::pic8259::is_printable_ascii;
+
 // Quick and dirty printing
 impl Printer {
     pub fn print_char(&mut self, c: u8) {
@@ -75,5 +76,12 @@ impl Printer {
         } else {
             self.print_char(b'?');
         }
+    }
+}
+
+pub fn is_printable_ascii(c: u8) -> bool {
+    match c {
+        b' '..=b'~' => true,
+        _ => false
     }
 }

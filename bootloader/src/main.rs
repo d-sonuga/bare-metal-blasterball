@@ -1,5 +1,5 @@
-#![no_main]
-#![no_std]
+#![cfg_attr(not(test), no_main)]
+#![cfg_attr(not(test), no_std)]
 #![feature(abi_x86_interrupt, abi_efiapi)]
 #![allow(unaligned_references)]
 

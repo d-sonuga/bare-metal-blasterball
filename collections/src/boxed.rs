@@ -90,15 +90,10 @@ impl<'a, T> Drop for Box<'a, T> {
 }
 
 #[cfg(test)]
+#[allow(unused_variables)]
 mod tests {
     use super::*;
     use crate::allocator::{Error, Allocator};
-
-    macro_rules! mutate_cond_fail_alloc {
-        ($cond_fail_allocator:ident, should_fail => $e:expr) => {
-            (*(&$cond_fail_allocator as *const _ as *mut ConditionalFailureAllocator)).should_fail = $e;
-        }
-    }
 
     #[test]
     fn test_box_create() {
@@ -173,7 +168,6 @@ mod tests {
 
     unsafe impl Allocator for ConditionalFailureAllocator {
         unsafe fn alloc(&self, size_of_type: usize, size_to_alloc: usize) -> Result<*mut u8, Error> {
-            use crate::allocator::Error;
             if self.should_fail {
                 Err(Error::UnknownError)
             } else {
@@ -182,7 +176,6 @@ mod tests {
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, size_to_dealloc: usize)  -> Result<(), Error> {
-            use crate::allocator::Error;
             if self.should_fail {
                 Err(Error::UnknownError)
             } else {

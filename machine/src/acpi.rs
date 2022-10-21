@@ -315,7 +315,7 @@ impl DSDT {
 
     /// This functions checks if the S5 object has the expected beginning bytes
     /// of an AML structure. `s5_obj_ptr` points to the "_S5_" string in the bytecode
-    ///
+    /// ```text
     /// bytecode of the \_S5 object
     /// -----------------------------------------
     ///        | (optional) |    |    |    |   
@@ -332,6 +332,7 @@ impl DSDT {
     /// 12        | 06        | 04          | 00 00 00 00
     ///
     /// (Pkglength bit 6-7 encode additional PkgLength bytes [shouldn't be the case here])
+    /// ```
     unsafe fn s5_object_is_valid(&self, s5_obj_ptr: *const u8) -> bool {
         *s5_obj_ptr.offset(-1) == 0x08
             || (*s5_obj_ptr.offset(-2) == 0x08 && *s5_obj_ptr.offset(-1) ==b'\\' )
@@ -342,6 +343,10 @@ impl DSDT {
     // MethodOp
     // MethodFlags:= MethodOp PkgLength NameString MethodFlags TermList
     // MethodOp == 0x14
+    // NOTE: Didn't finish this.
+    //       The pts method ought to be called in the shutdown process
+    //       but I didn't find enough time to finish this.
+    //       So there is no shutdown mechanism available in the game.
     pub unsafe fn figure_out_how_to_execute_the_pts_obj(&self) {
         let start_ptr = (self as *const Self as *const u8).offset(SDT_HEADER_SIZE as isize);
         let bytes = slice::from_raw_parts(start_ptr, self.header.length as usize - SDT_HEADER_SIZE);

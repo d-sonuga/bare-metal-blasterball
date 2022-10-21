@@ -118,7 +118,7 @@ mod tests {
                 speed: 1
             }
         };
-        let old_pos = object.update_pos(1);
+        let old_pos = object.update_pos(1, 1, 1);
         assert_eq!(old_pos, Point(0, 0));
         assert_eq!(object.pos, Point(1, 0));
 
@@ -129,7 +129,7 @@ mod tests {
                 speed: 1
             }
         };
-        object.update_pos(1);
+        object.update_pos(1, 1, 1);
         assert_eq!(object.pos, Point(0, -1));
 
         let mut object = Object {
@@ -139,7 +139,7 @@ mod tests {
                 speed: 1
             }
         };
-        object.update_pos(1);
+        object.update_pos(1, 1, 1);
         assert_eq!(object.pos, Point(5, 5));
 
         let mut object = Object {
@@ -149,7 +149,7 @@ mod tests {
                 speed: 1
             }
         };
-        object.update_pos(1);
+        object.update_pos(1, 1, 1);
         assert_eq!(object.pos, Point(4, 6));
 
         let mut object = Object {
@@ -159,7 +159,7 @@ mod tests {
                 speed: 1
             }
         };
-        object.update_pos(1);
+        object.update_pos(1, 1, 1);
         assert_eq!(object.pos, Point(0, -1));
     }
 

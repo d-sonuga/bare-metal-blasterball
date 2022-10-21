@@ -1,4 +1,4 @@
-use machine::power::FRAMEBUFFER;
+use machine::FRAMEBUFFER;
 use machine::memory::{Addr, EFIMemRegionType, MemChunk};
 use machine::uefi;
 use machine::uefi::EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
@@ -67,7 +67,9 @@ fn init_framebuffer(fb: Addr) {
     FRAMEBUFFER.call_once(|| fb);
 }
 
-#[panic_handler]
+// Allowing dead code because this function is unused during testing
+#[allow(dead_code)]
+#[cfg_attr(not(test), panic_handler)]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     if FRAMEBUFFER.get().is_some() {
         // The printer can't be used until the

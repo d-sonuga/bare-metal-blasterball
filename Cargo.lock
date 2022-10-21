@@ -27,7 +27,6 @@ dependencies = [
  "physics",
  "sound",
  "sync",
- "tester",
 ]
 
 [[package]]
@@ -43,7 +42,6 @@ dependencies = [
  "num",
  "sound",
  "sync",
- "tester",
 ]
 
 [[package]]
@@ -71,7 +69,6 @@ name = "lazy_static"
 version = "0.1.0"
 dependencies = [
  "sync",
- "tester",
 ]
 
 [[package]]
@@ -85,9 +82,6 @@ dependencies = [
 [[package]]
 name = "num"
 version = "0.1.0"
-dependencies = [
- "tester",
-]
 
 [[package]]
 name = "physics"
@@ -111,8 +105,4 @@ dependencies = [
 
 [[package]]
 name = "sync"
-version = "0.1.0"
-
-[[package]]
-name = "tester"
 version = "0.1.0"

@@ -1,7 +1,6 @@
 //! Collections for managing heap allocated values
 
 #![cfg_attr(not(test), no_std)]
-#![feature(lang_items, box_syntax, rustc_attrs, core_intrinsics)]
 #![allow(dead_code)]
 
 pub mod vec;

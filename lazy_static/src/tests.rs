@@ -1,5 +1,4 @@
 use crate::lazy_static;
-use crate::Lazy;
 
 lazy_static! {
     static ref TRUE_OR_FALSE: bool = {
@@ -11,7 +10,7 @@ lazy_static! {
     };
 }
 
-#[test_case]
+#[test]
 fn test_static(){
     assert_eq!(*TRUE_OR_FALSE, false);
 }

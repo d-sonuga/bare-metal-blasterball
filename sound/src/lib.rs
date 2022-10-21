@@ -14,8 +14,6 @@ mod wav;
 pub mod macros;
 pub use wav::WavFile;
 mod printer;
-use core::fmt::Write;
-use printer::Printer;
 mod font;
 
 static mut SOUND_DEVICE: Option<SoundDevice> = None;
@@ -979,58 +977,7 @@ impl SoundDevice {
             Err(())
         }
     }
-/*
-    fn pause_sound(&mut self, stream_tag: StreamTag) {
-        assert!(stream_tag == 1 || stream_tag == 2);
-        self.output_streams[stream_tag - 1].stop();
-        if let Some(hook_id) = self.currently_playing_sound_ids[stream_tag - 1].take() {
-            event_hook::unhook_event(hook_id, EventKind::Sound);
-        }
-    }
 
-    fn resume_sound(&mut self, stream_tag: StreamTag) {
-        assert!(stream_tag == 1 || stream_tag == 2);
-        let mut output_stream = &mut self.output_streams[stream_tag - 1];
-        output_stream.start();
-        /*if self.currently_playing_sound_ids[stream_tag - 1].is_some() {
-            self.stop_sound(stream_tag).unwrap();
-        }*/
-        
-        /*for tag in 1..=2 {
-            if self.currently_playing_sound_ids[tag - 1].is_some() {
-                self.stop_sound(tag).unwrap();
-            }
-        }*/
-        //let mut dac = &mut self.output_converters[*self.active_dac_index.as_ref().unwrap()];
-        //self.prepare_to_play_sound(stream_tag);
-        //dac.setup_stream_and_channel(&mut self.commander, stream_tag.as_u8(), 0);
-        //dac.set_converter_format(self.output_streams[stream_tag - 1].regs.format.reg_value(), &mut self.commander);
-        //let mut output_stream = &mut self.output_streams[stream_tag - 1];
-        // For some reason, this init function has to be called
-        // again before playing a new stream
-        /*if !output_stream.has_initialized() {
-            output_stream.init();
-            output_stream.setup_sound_stream(sound);
-        }*/
-        /*
-        let action_on_end_hook_id = match action_on_end {
-            ActionOnEnd::Stop => event_hook::hook_event(EventKind::Sound, box_fn!(move |_| {
-                stop_sound(stream_tag).unwrap();
-            })),
-            ActionOnEnd::Replay => event_hook::hook_event(EventKind::Sound, box_fn!(move |_| {
-                let mut sd = get_sound_device().unwrap();
-                sd.output_streams[stream_tag - 1].stop();
-                sd.output_streams[stream_tag - 1].reset();
-                sd.output_streams[stream_tag - 1].init();
-                sd.output_streams[stream_tag - 1].setup_sound_stream(sound);
-                sd.output_streams[stream_tag - 1].start();
-            })),
-            ActionOnEnd::Action(func) => event_hook::hook_event(EventKind::Sound, func)
-        };*/
-        //self.currently_playing_sound_ids[stream_tag - 1] = Some(action_on_end_hook_id);
-        //output_stream.start();
-    }
-*/
     fn set_beep_gen(&mut self, beep_node: NodeAddr) {
         self.beep_gen = Some(beep_node);
     }
@@ -3928,36 +3875,7 @@ impl CORB {
         while self.regs.corbwp.write_pointer() != self.regs.corbrp.read_pointer() {}
         self.write_pointer = (self.write_pointer + 1) % self.size.entries_as_u16().as_usize();
         self.commands[self.write_pointer] = command;
-        /*
-        if self.write_pointer == 0 {
-            self.write_pointer = 1;
-            self.commands[self.write_pointer] = command;
-            self.regs.corbwp.set_write_pointer(self.write_pointer.as_u8());
-            
-            self.regs.control.enable_corb_dma_engine(false);
-            while self.regs.control.corb_dma_engine_enabled() {}
-            self.regs.corbrp.set_read_pointer_reset(true);
-            while self.regs.corbrp.read_pointer_reset() != true {}
-            self.regs.corbrp.set_read_pointer_reset(false);
-            while self.regs.corbrp.read_pointer_reset() != false {}
-            self.regs.control.enable_corb_dma_engine(true);
-            while !self.regs.control.corb_dma_engine_enabled() {}
-        }*/
         self.regs.corbwp.set_write_pointer(self.write_pointer.as_u8());
-        /*if self.regs.corbwp.write_pointer().as_u16() == 0 {
-            self.write_pointer = 1;
-            self.commands[self.write_pointer] = command;
-            self.regs.corbwp.set_write_pointer(self.write_pointer.as_u8());
-
-            //self.regs.control.enable_corb_dma_engine(false);
-            //while self.regs.control.corb_dma_engine_enabled() {}
-            self.regs.corbrp.set_read_pointer_reset(true);
-            while self.regs.corbrp.read_pointer_reset() != true {}
-            self.regs.corbrp.set_read_pointer_reset(false);
-            while self.regs.corbrp.read_pointer_reset() != false {}
-            //self.regs.control.enable_corb_dma_engine(true);
-            //while !self.regs.control.corb_dma_engine_enabled() {}
-        }*/
     }
     
     fn size(&self) -> HDARingBufferSize {
@@ -4097,57 +4015,3 @@ impl Commander {
 #[repr(C, align(2))]
 pub struct Sample(pub u16);
 
-/*
-/// A buffer of samples
-///
-/// A set of instances of this structure is what makes up
-/// the virtual cyclic buffer. The buffer descriptor list contains
-/// the descriptions of these buffers
-
-const NUM: usize = msb_size;
-#[repr(C, align(128))]
-struct SampleBuffer {
-    samples: [Sample; NUM]
-}
-
-impl SampleBuffer {
-    fn from(sample_bytes: &[u16]) -> Self {
-        let mut samples = [Sample(0); NUM];
-        for (i, bytes) in sample_bytes.iter().enumerate() {
-            if i >= NUM {
-                break;
-            }
-            samples[i] = Sample(*bytes);
-        }
-        Self { samples }
-    }
-
-    fn len(&self) -> usize {
-        NUM
-    }
-
-    fn bytes_len(&self) -> usize {
-        NUM * core::mem::size_of::<Sample>()
-    }
-
-    fn as_ptr(&self) -> *const Self {
-        self as *const _
-    }
-
-    fn as_slice(&self) -> &[Sample] {
-        self.samples.as_slice()
-    }
-}
-
-impl Index<usize> for SampleBuffer {
-    type Output = Sample;
-    fn index(&self, idx: usize) -> &Self::Output {
-        &self.samples[idx]
-    }
-}
-
-impl IndexMut<usize> for SampleBuffer {
-    fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
-        &mut self.samples[idx]
-    }
-}*/

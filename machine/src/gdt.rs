@@ -10,9 +10,10 @@ const GDT_MAX_ENTRY_SIZE: usize = 8;
 
 /// A structure containing entries of memory segments
 ///
-/// https://wiki.osdev.org/Global_Descriptor_Table
+/// # References
 ///
-/// https://en.wikipedia.org/wiki/Global_Descriptor_Table
+/// * <https://wiki.osdev.org/Global_Descriptor_Table>
+/// * <https://en.wikipedia.org/wiki/Global_Descriptor_Table>
 #[repr(C)]
 pub struct GlobalDescriptorTable {
     entries: [u64; GDT_MAX_ENTRY_SIZE],

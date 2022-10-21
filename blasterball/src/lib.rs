@@ -1,5 +1,5 @@
-#![no_main]
-#![no_std]
+#![cfg_attr(not(test), no_main)]
+#![cfg_attr(not(test), no_std)]
 #![feature(array_windows, array_chunks)]
 #![allow(unaligned_references)]
 
@@ -137,17 +137,11 @@ impl Game {
                                 self.paused_msg_has_been_drawn = false;
                                 sound::play_sound(DRUM.deref(), ActionOnEnd::Replay);
                             }
-                            self.shutdown_attempted = false;
                         }
                         KeyCode::Escape => {
-                            self.paused = true;
-                            sound::play_sound(MUSIC.deref(), ActionOnEnd::Replay);
-                        }
-                        KeyCode::X => {
-                            if self.paused {
-                                if unsafe { machine::power::shutdown() }.is_err() {
-                                    self.shutdown_attempted = true;
-                                }
+                            if !self.has_started {
+                                self.paused = true;
+                                sound::play_sound(MUSIC.deref(), ActionOnEnd::Replay);
                             }
                         }
                         _ => ()
@@ -226,70 +220,6 @@ impl Game {
             self.artist.draw_on_screen_from_double_buffer();
         }));
 
-        /*
-        loop {
-            if !self.has_started && !self.paused {
-                self.artist.write_str("Press enter to start\n").unwrap();
-                self.artist.reset_writing_pos();
-                continue;
-            }
-            if self.paused {
-                if self.shutdown_attempted {
-                    self.artist.write_str("Shut down your computer yourself").unwrap();
-                    self.artist.reset_writing_pos();
-                } else {
-                    if !self.paused_msg_has_been_drawn {
-                        self.draw_game_in_double_buffer();
-                        self.artist.draw_on_screen_from_double_buffer();
-                        self.artist.write_str("Paused\n").unwrap();
-                        self.artist.write_str("Press enter to continue\n").unwrap();
-                        self.artist.reset_writing_pos();
-                        self.paused_msg_has_been_drawn = true
-                    }
-                }
-                continue;
-            }
-            if self.blocks.len() == 0 {
-                self.artist.write_str("You win\n").unwrap();
-                self.artist.write_str("Press y to play again\n").unwrap();
-                self.artist.reset_writing_pos();
-                break;
-            }
-            if ball_collided_with_left_wall(&self.ball_char) {
-                // Need to consider the scenario where the direction is 180/0 degrees
-                self.ball_char.object.velocity.reflect_about_y_axis();
-            } else if ball_collided_with_right_wall(&self.ball_char) {
-                // Need to consider the scenario where the direction is 180/0 degrees
-                self.ball_char.object.velocity.reflect_about_y_axis();
-            } else if ball_collided_with_ceiling(&self.ball_char) {
-                // Need to consider the scenario where the direction is 270/90 degrees
-                self.ball_char.object.velocity.reflect_about_x_axis();
-            } else if self.ball_char.collided_with(&self.paddle_char).0 {
-                // Need to consider the scenario where the direction is 270/90 degrees
-                self.ball_char.object.velocity.reflect_about_x_axis();
-            } else if ball_is_off_screen(&self.ball_char) {
-                self.artist.write_str("Game over\n").unwrap();
-                self.artist.write_str("Press y to play again\n").unwrap();
-                break;
-            }
-            for i in 0..self.blocks.len() {
-                let block_char = &self.blocks[i];
-                if self.ball_char.collided_with(block_char).0 {
-                    self.artist.erase_scaled_bitmap_from_double_buffer(&block_char.repr, block_char.object.pos, &self.background);
-                    self.ball_char.object.velocity.reflect_about_x_axis();
-                    self.blocks.remove(i);
-                    break;
-                }
-            }
-            let old_pos = self.ball_char.object.update_pos(1, X_SCALE, Y_SCALE);
-            let (ball_passed_through_paddle, point_at_paddle_level_opt) = ball_passed_through_paddle(old_pos, self.ball_char.object.pos, self.ball_char.object.velocity.direction, &self.paddle_char);
-            if ball_passed_through_paddle {
-                self.ball_char.object.pos = point_at_paddle_level_opt.unwrap();
-            }
-            self.artist.move_scaled_bitmap_in_double_buffer(&self.ball_char.repr, old_pos, self.ball_char.object.pos, &self.background);
-            self.draw_game_in_double_buffer();
-            self.artist.draw_on_screen_from_double_buffer();
-        }*/
         loop {
             if ended { break; }
         }
@@ -299,8 +229,8 @@ impl Game {
 
     fn move_paddle_in_double_buffer(&mut self, direction: PaddleDirection) {
         let diff = match direction {
-            PaddleDirection::Left => Point(-4 * X_SCALE.as_i16(), 0),
-            PaddleDirection::Right => Point(4 * X_SCALE.as_i16(), 0)
+            PaddleDirection::Left => Point(-5 * X_SCALE.as_i16(), 0),
+            PaddleDirection::Right => Point(5 * X_SCALE.as_i16(), 0)
         };
         let old_pos = self.paddle_char.object.pos;
         self.paddle_char.object.pos += diff;

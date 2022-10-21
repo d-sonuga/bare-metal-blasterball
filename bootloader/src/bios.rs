@@ -99,8 +99,9 @@ pub extern "C" fn main() -> ! {
     setup_memory_and_run_game(stack_mem, heap_mem);
 }
 
-
-#[panic_handler]
+// Allowing dead code because this function is unused during testing
+#[allow(dead_code)]
+#[cfg_attr(not(test), panic_handler)]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     // A function that allows for printing independently of the artist
     use artist::{is_printable_ascii, font, Color};

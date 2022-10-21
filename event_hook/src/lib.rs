@@ -1,4 +1,4 @@
-//! A library for adding event handlers
+//! A library for managing event handlers
 
 #![cfg_attr(not(test), no_std)]
 #![feature(unboxed_closures, fn_traits)]

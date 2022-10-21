@@ -22,6 +22,11 @@ mod font;
 
 use memory::Addr;
 
+use sync::once::Once;
+
+/// The address of the display screen memory map
+pub static FRAMEBUFFER: Once<Addr> = Once::new();
+
 /// A structure that is used to load a new Descriptor Table
 #[repr(C, packed(2))]
 pub struct DescriptorTablePointer {

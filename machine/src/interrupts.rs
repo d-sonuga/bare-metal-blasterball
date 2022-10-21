@@ -99,7 +99,9 @@ impl<F> fmt::Debug for IDTEntry<F> {
 
 /// A representation of the options in an IDT entry
 ///
-/// https://os.phil-opp.com/cpu-exceptions/
+/// # References
+///
+/// * <https://os.phil-opp.com/cpu-exceptions/>
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct IDTEntryOptions(u16);
@@ -133,8 +135,11 @@ impl fmt::Debug for IDTEntryOptions {
 /// A representation of the Interrupt Descriptor Table
 ///
 /// The CPU uses this to find interrupt service routines and handle exceptions
-/// https://wiki.osdev.org/Interrupt_Descriptor_Table
-/// https://wiki.osdev.org/Exceptions
+///
+/// # References
+///
+/// * <https://wiki.osdev.org/Interrupt_Descriptor_Table>
+/// * <https://wiki.osdev.org/Exceptions>
 #[repr(C)]
 #[repr(align(16))]
 pub struct InterruptDescriptorTable {
@@ -279,7 +284,9 @@ pub type HandlerOfNoReturn = extern "x86-interrupt" fn(InterruptStackFrame, u64)
 
 /// The values pushed on the stack by the CPU during an interrupt or exception
 ///
-/// https://wiki.osdev.org/Interrupt_Service_Routines
+/// # References
+///
+/// * <https://wiki.osdev.org/Interrupt_Service_Routines>
 #[repr(C)]
 pub struct InterruptStackFrame {
     /// The instruction following the last executed instruction before the exception | interrupt

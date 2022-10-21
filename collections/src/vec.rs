@@ -36,11 +36,14 @@ impl<'a, T: Clone> Vec<'a, T> {
     }
 
     /// Appends an item to the end of the vector.
+    ///
+    /// # Analysis
+    /// Running time is O(1) amortized.
+    ///
+    /// O(n) in the case where all contents have to be copied over into new vector,
+    /// but I think it's safe to assume that this would rarely happen.
     /// If the vector is full, it will allocate another vector with double the capacity
     /// and copy contents over to the new vector.
-    ///
-    /// Running time is O(1). O(n) in the case where all contents have to be copied over into
-    /// new vector
     ///
     /// # Panics
     ///
@@ -71,6 +74,8 @@ impl<'a, T: Clone> Vec<'a, T> {
 
     /// Removes an item from the end of the vector and returns it
     ///
+    /// # Analysis
+    ///
     /// Running time is O(1)
     ///
     /// # Panics
@@ -95,7 +100,9 @@ impl<'a, T: Clone> Vec<'a, T> {
 
     /// Removes the item at index idx and returns it
     ///
-    /// Running time is O(n) because all items after the item with index idx
+    /// # Analysis
+    ///
+    /// Running time is O(n) because all items after the item with index `idx`
     /// must be shifted upwards
     ///
     /// # Panics
@@ -265,13 +272,14 @@ macro_rules! vec {
 }
 
 #[cfg(test)]
+#[allow(unused_variables)]
 mod tests {
     use super::*;
     use crate::allocator::Error;
 
     #[test]
     fn test_create() {
-        let mut v: Vec<u8> = Vec::with_capacity(100, &AlwaysSuccessfulAllocator);
+        let v: Vec<u8> = Vec::with_capacity(100, &AlwaysSuccessfulAllocator);
         assert_eq!(v.capacity(), 100);
     }
 
@@ -333,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_macro_1() {
-        let mut v = crate::vec![3, 4, 54_444, 23, 2; &AlwaysSuccessfulAllocator];
+        let v = crate::vec![3, 4, 54_444, 23, 2; &AlwaysSuccessfulAllocator];
         assert_eq!(v.len(), 5);
         assert_eq!(v[0], 3);
         assert_eq!(v[1], 4);
@@ -344,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_macro_2() {
-        let mut v = crate::vec![0u8; 5; &AlwaysSuccessfulAllocator];
+        let v = crate::vec![0u8; 5; &AlwaysSuccessfulAllocator];
         assert_eq!(v.len(), 5);
         for i in 0..v.len() {
             assert_eq!(v[i], 0);
@@ -382,7 +390,7 @@ mod tests {
 
     macro_rules! mutate_cond_fail_alloc {
         ($cond_fail_allocator:ident, should_fail => $e:expr) => {
-            (*(&$cond_fail_allocator as *const _ as *mut ConditionalFailureAllocator)).should_fail = $e;
+            (*(&$cond_fail_allocator as *const _ as *mut ConditionalFailureAllocator)).should_fail = $e
         }
     }
 
@@ -390,7 +398,7 @@ mod tests {
     #[should_panic]
     fn test_out_of_space_on_push() {
         use core::mem::ManuallyDrop;
-        let mut cond_failure_allocator = ConditionalFailureAllocator { should_fail: false };
+        let cond_failure_allocator = ConditionalFailureAllocator { should_fail: false };
         // Using ManuallyDrop to avoid double panics because the dealloc function is called in drop
         let mut v: ManuallyDrop<Vec<u32>> = ManuallyDrop::new(Vec::with_capacity(1, &cond_failure_allocator));
         v.push(3);
@@ -402,8 +410,8 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_failure_on_dealloc() {
-        let mut cond_failure_allocator = ConditionalFailureAllocator { should_fail: false };
-        let mut v: Vec<bool> = Vec::with_capacity(3, &cond_failure_allocator);
+        let cond_failure_allocator = ConditionalFailureAllocator { should_fail: false };
+        let v: Vec<bool> = Vec::with_capacity(3, &cond_failure_allocator);
         unsafe { mutate_cond_fail_alloc!(cond_failure_allocator, should_fail => true) };
         // dealloc is called on drop
     }
@@ -415,7 +423,7 @@ mod tests {
             x: i32,
             y: usize,
             z: i128
-        };
+        }
         let mut v = Vec::with_capacity(2, &AlwaysSuccessfulAllocator);
         v.push(SomeValues { x: 32, y: 54_444, z: 889_987_233_554 });
         v.push(SomeValues { x: 890, y: 5_343, z: 335_232 });
@@ -456,7 +464,6 @@ mod tests {
 
     unsafe impl Allocator for ConditionalFailureAllocator {
         unsafe fn alloc(&self, size_of_type: usize, size_to_alloc: usize) -> Result<*mut u8, Error> {
-            use crate::allocator::Error;
             if self.should_fail {
                 Err(Error::UnknownError)
             } else {
@@ -465,7 +472,6 @@ mod tests {
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, size_to_dealloc: usize)  -> Result<(), Error> {
-            use crate::allocator::Error;
             if self.should_fail {
                 Err(Error::UnknownError)
             } else {

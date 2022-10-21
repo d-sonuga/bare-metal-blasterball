@@ -1,9 +1,6 @@
 use crate::port::{Port, PortReadWrite};
-use crate::memory::Addr;
 use crate::acpi::{detect_rsdp, SDTTable, RSDP};
-use sync::once::Once;
 
-pub static FRAMEBUFFER: Once<Addr> = Once::new();
 
 /// Shuts down the computer
 ///
@@ -11,7 +8,13 @@ pub static FRAMEBUFFER: Once<Addr> = Once::new();
 /// An error is returned whenever anything expected isn't found, or anything
 /// goes wrong.
 ///
+/// # Note
+/// This function is unfinished.
+/// It works in emulators, but not on real hardware, because on real hardware,
+/// the ACPI control method PTS in the DSDT must be called before the actual shutdown.
+///
 /// # References:
+///
 /// * https://wiki.osdev.org/Shutdown
 /// * https://wiki.osdev.org/RSDP
 /// * https://wiki.osdev.org/RSDT

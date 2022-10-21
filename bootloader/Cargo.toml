@@ -9,7 +9,6 @@ edition = "2021"
 artist = { path = "../artist" }
 blasterball = { path = "../blasterball" }
 machine = { path = "../machine" }
-tester = { path = "../tester" }
 lazy_static = { path = "../lazy_static" }
 sync = { path = "../sync" }
 collections = { path = "../collections" }

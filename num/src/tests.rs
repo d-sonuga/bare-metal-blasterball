@@ -34,7 +34,7 @@ fn test_get_set_bits(){
     assert_eq!(n, 0b101);
     assert_eq!(0b101, n.get_bits(0..3));
 
-    let mut n = 0b11011u32;
+    let n = 0b11011u32;
     assert_eq!(0b110, n.get_bits(2..5));
 
     let n = 0x140048020u64;

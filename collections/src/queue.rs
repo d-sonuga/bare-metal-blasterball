@@ -43,7 +43,7 @@ impl<'a, T: Clone> Queue<'a, T> {
     
     /// Places an item at the back of the queue
     ///
-    /// # Complexity
+    /// # Analysis
     /// Takes O(1) amortized time
     ///
     /// On a regular day, while there is still enough capacity, this will take O(1) time.
@@ -94,7 +94,8 @@ impl<'a, T: Clone> Queue<'a, T> {
 
     /// Removes and returns the item at the front of the queue, if there is any
     ///
-    /// # Complexity
+    /// # Analysis
+    ///
     /// Takes O(1) time, since it's just removing an item and updating pointers
     pub fn dequeue(&mut self) -> Option<T> {
         if self.len == 0 {
@@ -155,13 +156,14 @@ macro_rules! queue {
 }
 
 #[cfg(test)]
+#[allow(unused_variables)]
 mod tests {
     use super::*;
     use crate::allocator::{Error, Allocator};
 
     #[test]
     fn test_create() {
-        let mut queue: Queue<u8> = Queue::with_capacity(100, &AlwaysSuccessfulAllocator);
+        let queue: Queue<u8> = Queue::with_capacity(100, &AlwaysSuccessfulAllocator);
         assert_eq!(queue.capacity(), 100)
     }
 
@@ -239,7 +241,7 @@ mod tests {
 
     macro_rules! mutate_cond_fail_alloc {
         ($cond_fail_allocator:ident, should_fail => $e:expr) => {
-            (*(&$cond_fail_allocator as *const _ as *mut ConditionalFailureAllocator)).should_fail = $e;
+            (*(&$cond_fail_allocator as *const _ as *mut ConditionalFailureAllocator)).should_fail = $e
         }
     }
 
@@ -247,7 +249,7 @@ mod tests {
     #[should_panic]
     fn test_out_of_space_on_enqueue() {
         use core::mem::ManuallyDrop;
-        let mut cond_failure_allocator = ConditionalFailureAllocator { should_fail: false };
+        let cond_failure_allocator = ConditionalFailureAllocator { should_fail: false };
         // Using ManuallyDrop to avoid double panics because the dealloc function is called in drop
         let mut queue: ManuallyDrop<Queue<u32>> = ManuallyDrop::new(Queue::with_capacity(1, &cond_failure_allocator));
         queue.enqueue(3);
@@ -259,8 +261,8 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_failure_on_dealloc() {
-        let mut cond_failure_allocator = ConditionalFailureAllocator { should_fail: false };
-        let mut v: Queue<bool> = Queue::with_capacity(3, &cond_failure_allocator);
+        let cond_failure_allocator = ConditionalFailureAllocator { should_fail: false };
+        let q: Queue<bool> = Queue::with_capacity(3, &cond_failure_allocator);
         unsafe { mutate_cond_fail_alloc!(cond_failure_allocator, should_fail => true) };
         // dealloc is called on drop
     }
@@ -272,7 +274,7 @@ mod tests {
             x: i32,
             y: usize,
             z: i128
-        };
+        }
         let mut queue = Queue::with_capacity(2, &AlwaysSuccessfulAllocator);
         queue.enqueue(SomeValues { x: 32, y: 54_444, z: 889_987_233_554 });
         queue.enqueue(SomeValues { x: 890, y: 5_343, z: 335_232 });
@@ -315,7 +317,6 @@ mod tests {
 
     unsafe impl Allocator for ConditionalFailureAllocator {
         unsafe fn alloc(&self, size_of_type: usize, size_to_alloc: usize) -> Result<*mut u8, Error> {
-            use crate::allocator::Error;
             if self.should_fail {
                 Err(Error::UnknownError)
             } else {
@@ -324,7 +325,6 @@ mod tests {
         }
 
         unsafe fn dealloc(&self, ptr: *mut u8, size_to_dealloc: usize)  -> Result<(), Error> {
-            use crate::allocator::Error;
             if self.should_fail {
                 Err(Error::UnknownError)
             } else {

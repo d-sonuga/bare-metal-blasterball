@@ -67,6 +67,7 @@ impl ListNode {
 /// The free regions are kept track of with a linked list whose nodes are the
 /// free regions themselves.
 /// That is, the free regions hold their own information
+///
 /// Note: This allocator was hacked together with raw pointers, because I didn't like the
 /// stress references were giving me
 #[derive(Debug)]
@@ -200,22 +201,22 @@ unsafe impl Allocator for Mutex<LinkedListAllocator> {
 }
 
 #[cfg(test)]
+#[allow(unused_variables)]
 mod tests {
     use super::*;
     use crate::vec::Vec;
-    use crate::vec;
     use std::vec::Vec as StdVec;
     use std::mem::ManuallyDrop;
-    const four_kib: usize = 2usize.pow(12);
+    const FOUR_KIB: usize = 2usize.pow(12);
 
     #[test]
     fn test_vec_create() {
         let allocator = Mutex::new(get_4kib_allocator());
         let vec_size = 20;
-        let mut v: Vec<u8> = Vec::with_capacity(vec_size, &allocator);
+        let v: Vec<u8> = Vec::with_capacity(vec_size, &allocator);
         unsafe {
             let new_heap_size = (*allocator.lock().head.next.unwrap()).size;
-            assert_eq!(new_heap_size as usize, four_kib - vec_size);
+            assert_eq!(new_heap_size as usize, FOUR_KIB - vec_size);
         }
     }
 
@@ -224,11 +225,11 @@ mod tests {
         let allocator = Mutex::new(get_4kib_allocator());
         let vec_size = 20;
         {
-            let mut v: Vec<u8> = Vec::with_capacity(vec_size, &allocator);
+            let v: Vec<u8> = Vec::with_capacity(vec_size, &allocator);
         }
         unsafe {
             let heap_size_after_dropping_vec = (*allocator.lock().head.next.unwrap()).size;
-            assert_eq!(heap_size_after_dropping_vec, four_kib as u64);
+            assert_eq!(heap_size_after_dropping_vec, FOUR_KIB as u64);
         }
     }
 
@@ -236,8 +237,8 @@ mod tests {
     #[should_panic]
     fn test_vec_too_big() {
         let allocator = Mutex::new(get_4kib_allocator());
-        let vec_size = four_kib + 1;
-        let mut v: Vec<u8> = Vec::with_capacity(vec_size, &allocator);
+        let vec_size = FOUR_KIB + 1;
+        let v: Vec<u8> = Vec::with_capacity(vec_size, &allocator);
         
     }
 
@@ -246,26 +247,26 @@ mod tests {
         let allocator = get_4kib_allocator();
         let mut iter = unsafe { allocator.iter() };
         if let Some(MemChunk { size, .. }) = iter.next() {
-            assert_eq!(size as usize, four_kib);
+            assert_eq!(size as usize, FOUR_KIB);
         }
         assert_eq!(None, iter.next());
     }
 
     #[test]
     fn test_iter2() {
-        let mut allocator = Mutex::new(get_4kib_allocator());
+        let allocator = Mutex::new(get_4kib_allocator());
         // 4 items of 4 bytes each
         let allocd_ptr = unsafe { allocator.alloc(4, 4).unwrap() };
         let mut iter = unsafe { allocator.lock().iter() };
         if let Some(MemChunk { size, .. }) = iter.next() {
-            assert_eq!(size as usize, four_kib - 4 * 4);
+            assert_eq!(size as usize, FOUR_KIB - 4 * 4);
         }
         assert_eq!(None, iter.next());
 
-        unsafe { allocator.dealloc(allocd_ptr, 4 * 4) };
+        unsafe { allocator.dealloc(allocd_ptr, 4 * 4).unwrap() };
         let mut iter = unsafe { allocator.lock().iter() };
         if let Some(MemChunk { size, .. }) = iter.next() {
-            assert_eq!(size as usize, four_kib);
+            assert_eq!(size as usize, FOUR_KIB);
         }
         assert_eq!(None, iter.next());
     }
@@ -274,23 +275,23 @@ mod tests {
     fn test_iter3() {
         #[derive(Clone)]
         struct Struct(u32, u32, u32);
-        let mut allocator = Mutex::new(get_4kib_allocator());
+        let allocator = Mutex::new(get_4kib_allocator());
         let v: Vec<Struct> = Vec::with_capacity(5, &allocator);
         let mut iter = unsafe { allocator.lock().iter() };
         if let Some(MemChunk { size, .. }) = iter.next() {
-            assert_eq!(size as usize, four_kib - 5 * mem::size_of::<Struct>());
+            assert_eq!(size as usize, FOUR_KIB - 5 * mem::size_of::<Struct>());
         }
         assert_eq!(None, iter.next());
         mem::drop(v);
         let mut iter = unsafe { allocator.lock().iter() };
         if let Some(MemChunk { size, .. }) = iter.next() {
-            assert_eq!(size as usize, four_kib);
+            assert_eq!(size as usize, FOUR_KIB);
         }
         assert_eq!(None, iter.next());
     }
 
     fn get_4kib_allocator() -> LinkedListAllocator {
-        let mem: ManuallyDrop<StdVec<u8>> = ManuallyDrop::new(StdVec::with_capacity(four_kib));
+        let mem: ManuallyDrop<StdVec<u8>> = ManuallyDrop::new(StdVec::with_capacity(FOUR_KIB));
         let mem_ptr = mem.as_ptr() as *mut u8;
         let mut allocator = LinkedListAllocator {
             head: ListNode {
@@ -301,7 +302,7 @@ mod tests {
         unsafe {
             allocator.add_free_region(MemChunk {
                 start_addr: Addr::from_ptr(mem_ptr),
-                size: four_kib as u64
+                size: FOUR_KIB as u64
             });
         }
         return allocator;

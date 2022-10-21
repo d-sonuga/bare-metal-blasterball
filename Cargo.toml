@@ -4,7 +4,6 @@ members = [
     "blasterball",
     "artist",
     "num",
-    "tester",
     "lazy_static",
     "machine",
     "sync",
@@ -12,10 +11,6 @@ members = [
     "event_hook",
     "physics",
     "sound"
-]
-
-exclude = [
-    "tester"
 ]
 
 [profile.release]

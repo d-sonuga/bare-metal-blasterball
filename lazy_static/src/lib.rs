@@ -1,8 +1,6 @@
 //! Macro for creating lazily evaluated statics
 
 #![cfg_attr(not(test), no_std)]
-#![feature(custom_test_frameworks)]
-#![cfg_attr(test, test_runner(tester::test_runner))]
 
 pub use core::ops::Deref;
 use sync::once::Once;
@@ -14,6 +12,7 @@ mod tests;
 macro_rules! lazy_static_main {
     ($(#[$attr:meta])* ($($visibility:tt)*) static ref $name:ident : $item_type:ty = $e:expr;) => {
         // Make the $name identifier into a type of its own
+        #[allow(non_camel_case_types)]
         $(#[$attr])*
         $($visibility)* struct $name {__private_field: ()}
         $($visibility)* static $name: $name = $name {__private_field: ()};

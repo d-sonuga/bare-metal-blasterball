@@ -142,7 +142,6 @@ macro_rules! box_fn {
 pub mod tests {
     use super::*;
     use collections::allocator::{Allocator, Error};
-    use collections::vec;
 
     #[test]
     fn test_fn_call() {

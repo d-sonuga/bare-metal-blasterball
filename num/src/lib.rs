@@ -1,8 +1,6 @@
 //! General numeric and bitwise operations on numbers
 
 #![cfg_attr(not(test), no_std)]
-#![feature(custom_test_frameworks, core_intrinsics)]
-//#![cfg_attr(test, test_runner(tester::test_runner))]
 
 
 #[cfg(test)]
@@ -91,7 +89,7 @@ pub trait Integer: NumOps + PartialEq + PartialOrd + Sized {
     /// use num::Integer;
     ///
     /// let n = 0b1011011i128;
-    /// assert_eq!(0b1011, n.get_bits(3..=6));
+    /// assert_eq!(0b011, n.get_bits(3..6));
     /// ```
     ///
     /// ## Panics

@@ -1,4 +1,4 @@
-//! A font that prints 8x8 bit ascii characters on the screen in VGA 13h graphics mode
+//! A font that describes 8x8 bit ascii characters
 //!
 //! The arrays of bytes are descriptions of how to print a letter on screen
 //! Each byte in an array gives the pixel configurations for printing a row of the

@@ -8,9 +8,10 @@ use crate::gdt::SegmentSelector;
 
 /// A structure for storing tables used for switching stacks during exceptions
 ///
-/// https://wiki.osdev.org/Task_State_Segment
+/// # References
 ///
-/// https://en.wikipedia.org/wiki/Task_state_segment
+/// * <https://wiki.osdev.org/Task_State_Segment>
+/// * <https://en.wikipedia.org/wiki/Task_state_segment>
 #[repr(C, packed(4))]
 pub struct TaskStateSegment {
     reserved1: u32,
