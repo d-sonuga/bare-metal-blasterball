@@ -19,6 +19,7 @@ tell you.
 with most linux systems.
 
 * Install qemu and OVMF (https://wiki.osdev.org/OVMF) for UEFI emulation
+
     `sudo dnf install qemu edk2-ovmf`
     or
     `sudo apt install qemu edk2-ovmf`
@@ -28,13 +29,16 @@ to the root of this project
 
 ## Running in the emulator
 * Run the python script
+
     `python3 run.py`
 
 * When the shell loads in the emulator loads up, type in
+
     `fs0:bootloader.efi`
 
 ## Running on your machine
 * Build the project
+
     `python run.py --build-only`
 
 * Copy the bootloader.efi in target/x86_64-unknown-uefi/debug file to a flash drive
