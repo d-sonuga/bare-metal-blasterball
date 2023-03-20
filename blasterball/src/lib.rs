@@ -139,7 +139,7 @@ impl Game {
                             }
                         }
                         KeyCode::Escape => {
-                            if !self.has_started {
+                            if self.has_started {
                                 self.paused = true;
                                 sound::play_sound(MUSIC.deref(), ActionOnEnd::Replay);
                             }
