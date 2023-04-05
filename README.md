@@ -30,9 +30,12 @@ with most linux systems.
 to the root of this project
 
 ## Running in the emulator
+For some reasons I don't know, running the debug build with recent versions of Rust results in an
+error in the emulator. So, the release build has to be run instead (for now).
+
 * Run the python script
 
-    `python3 run.py`
+    `python3 run.py --release`
 
 * When the shell loads in the emulator loads up, type in
 
@@ -41,7 +44,7 @@ to the root of this project
 ## Running on your machine
 * Build the project
 
-    `python run.py --build-only`
+    `python run.py --build-only --release`
 
 * Copy the bootloader.efi in target/x86_64-unknown-uefi/debug file to a flash drive
 * Shutdown your computer
