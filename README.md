@@ -11,12 +11,12 @@ be able to get back to those loose ends because of time. The physics is really w
 isn't fully supported and the game itself has only background music but no sound effects.
 
 # Running
-I developed this on a linux Fedora system, so if you're on Windows, ..., I don't know what to
+I developed this on a Linux Fedora 38 system, so if you're on Windows, ..., I don't know what to
 tell you.
 
 ## Requirements
 * To run the code, you need a python3 interpreter installed, and I think that should come
-with most linux systems.
+with most Linux systems.
 
 * Install qemu and OVMF (https://wiki.osdev.org/OVMF) for UEFI emulation
 
@@ -26,28 +26,33 @@ with most linux systems.
     
     `sudo apt install qemu edk2-ovmf`
 
-* Copy the OVMF_CODE.fd and OVMF_VARS.fd from the OVMF root directory (/usr/share/edk2/ovmf on my system)
+* Copy the OVMF_CODE.fd and OVMF_VARS.fd from the OVMF root directory (`/usr/share/edk2/ovmf` on my system)
 to the root of this project
 
+* Because of some features I used and decisions I made, you need the 
+`nightly-2022-08-26` toolchain installed.
+
+    To install this toolchain: `rustup install nightly-2022-08-26`
+
 ## Running in the emulator
-For some reasons I don't know, running the debug build with recent versions of Rust results in an
-error in the emulator. So, the release build has to be run instead (for now).
 
-* Run the python script
+* Run the Python script
 
-    `python3 run.py --release`
+    `python3 run.py`
 
 * When the shell loads in the emulator loads up, type in
 
     `fs0:bootloader.efi`
+    
+    and hit enter
 
 ## Running on your machine
 * Build the project
 
     `python run.py --build-only --release`
 
-* Copy the bootloader.efi in target/x86_64-unknown-uefi/debug file to a flash drive
+* Copy the `bootloader.efi` in target/x86_64-unknown-uefi/debug file to a flash drive
 * Shutdown your computer
 * Power on your computer again, and open the boot menu
 * Choose boot from efi file
-* Select the bootloader.efi in your flash drive root
+* Select the `bootloader.efi` in your flash drive root
