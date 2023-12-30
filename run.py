@@ -57,7 +57,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     target = f'{root_dir}/x86_64-bios-target.json' if args.bios else 'x86_64-unknown-uefi'
     base_cargo_args = [
-        'cargo', 'b', '-p', 'bootloader', '--target', target,
+        'cargo', '+nightly-2022-08-26', 'b', '-p', 'bootloader', '--target', target,
         '-Zbuild-std=core,compiler_builtins', '-Zbuild-std-features=compiler-builtins-mem',
     ]
     base_qemu_args = ['qemu-system-x86_64', 
