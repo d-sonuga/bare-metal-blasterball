@@ -4,6 +4,8 @@ The only external libraries used are the Rust core library (because without this
 library, Rust wouldn't be Rust) and the compiler_builtins library, because the core
 library depends on it.
 
+More detailed info on how the game works is at https://d-sonuga.netlify.app/game-from-scratch/
+
 ![Blasterball Gameplay](https://github.com/d-sonuga/bare-metal-blasterball/blob/assets/blasterball-gameplay.gif)
 
 I had a lot of fun building this project, but it has a lot of loose ends and I won't
